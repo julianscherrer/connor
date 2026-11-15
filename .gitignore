@@ -1,0 +1,15 @@
+# Deine persönlichen Daten (Chats, Gedächtnis, Geschichten) – bleiben lokal, nie auf GitHub
+data/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# IDE und Betriebssystem
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
