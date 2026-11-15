@@ -3,9 +3,6 @@ setlocal
 cd /d "%~dp0"
 title Connor
 
-rem Bei neuen Paketen diese Zahl erhoehen - dann installiert start.bat sie automatisch nach.
-set "SETUP_VERSION=2"
-
 rem ---------------------------------------------------------------- Python
 set "PY="
 where py >nul 2>&1 && py -3 -c "import sys" >nul 2>&1 && set "PY=py -3"
@@ -17,7 +14,7 @@ if not defined PY (
     echo  Python wurde nicht gefunden.
     echo  Installiere Python 3.10 oder neuer:
     echo    - https://www.python.org/downloads/   ^(Haken bei "Add python.exe to PATH" setzen^)
-    echo    - oder im Terminal:  winget install -e --id Python.Python.3.12
+    echo    - oder im Terminal:  winget install -e --id Python.Python.3.13
     echo  Danach start.bat nochmal doppelklicken.
     echo.
     pause
@@ -36,9 +33,7 @@ if not exist ".venv\Scripts\python.exe" (
     %PY% -m venv .venv
     if errorlevel 1 goto :fail
 )
-set "INSTALLED="
-if exist ".venv\.installed" set /p INSTALLED=<".venv\.installed"
-if not "%INSTALLED%"=="%SETUP_VERSION%" call :install
+".venv\Scripts\python.exe" install.py --if-needed
 if errorlevel 1 goto :fail
 
 rem ---------------------------------------------------------------- Ollama
@@ -54,25 +49,6 @@ if errorlevel 1 if not exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
 )
 
 start "" ".venv\Scripts\pythonw.exe" main.py %*
-exit /b 0
-
-:install
-echo.
-echo  Installiere bzw. aktualisiere Connors Pakete ...
-".venv\Scripts\python.exe" -m pip install --upgrade pip
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
-if errorlevel 1 exit /b 1
-echo.
-echo  Installiere die Spracherkennung fuer das Diktieren - ca. 300 MB ...
-".venv\Scripts\python.exe" -m pip install -r requirements-voice.txt
-if errorlevel 1 (
-    echo.
-    echo  Hinweis: Die Spracherkennung liess sich nicht installieren.
-    echo  Connor laeuft trotzdem, nur ohne Diktieren. Spaeter nochmal versuchen mit update.bat.
-    echo.
-    pause
-)
->".venv\.installed" echo %SETUP_VERSION%
 exit /b 0
 
 :fail

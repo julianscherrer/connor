@@ -17,6 +17,7 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 # Plain HTTPS download instead of the Xet client: works behind proxies and with the Windows certificates.
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +52,29 @@ class VoiceError(Exception):
 def missing_packages(need_mic: bool = True) -> list[str]:
     names = ["faster_whisper"] + (["sounddevice"] if need_mic else [])
     return [name for name in names if importlib.util.find_spec(name) is None]
+
+
+def vad_available() -> bool:
+    """The optional silence detection of faster-whisper needs onnxruntime (not available for every Python)."""
+    return importlib.util.find_spec("onnxruntime") is not None
+
+
+def trim_silence(audio, frame_ms: int = 30, pad_ms: int = 300):
+    """Cuts silence at the start and end – our own little stand-in when onnxruntime is missing."""
+    import numpy as np
+
+    frame = SAMPLE_RATE * frame_ms // 1000
+    count = len(audio) // frame
+    if count < 3:
+        return audio
+    rms = np.sqrt(np.mean(audio[: count * frame].reshape(count, frame) ** 2, axis=1))
+    loud = np.nonzero(rms > max(0.004, float(rms.max()) * 0.08))[0]
+    if not len(loud):
+        return audio[:0]
+    pad = pad_ms // frame_ms
+    start = max(0, int(loud[0]) - pad) * frame
+    end = min(count, int(loud[-1]) + 1 + pad) * frame
+    return audio[start:end]
 
 
 def decode_audio(path: str):
@@ -167,6 +191,7 @@ class Transcriber:
         self._model = None
         self._loaded: tuple[str, str] | None = None
         self._cuda_failed = False
+        self._vad_failed = False
         self.root = root
         self.configure(model_name, language, device)
 
@@ -238,7 +263,19 @@ class Transcriber:
 
     def _run(self, audio, progress, should_stop) -> str:
         language = None if self.language == "auto" else self.language
-        segments, info = self._model.transcribe(audio, language=language, vad_filter=True, beam_size=5)
+        use_vad = vad_available() and not self._vad_failed
+        if not use_vad:
+            audio = trim_silence(audio)
+            if not len(audio):
+                return ""
+        try:
+            segments, info = self._model.transcribe(audio, language=language, vad_filter=use_vad, beam_size=5)
+        except Exception as exc:  # noqa: BLE001 - a broken onnxruntime must not stop the dictation
+            if not use_vad or "onnxruntime" not in str(exc).lower():
+                raise
+            log.warning("Stille-Erkennung nicht verfügbar (%s) – transkribiere ohne.", exc)
+            self._vad_failed = True
+            return self._run(audio, progress, should_stop)
         duration = float(getattr(info, "duration", 0) or 0)
         texts = []
         for segment in segments:

@@ -1,0 +1,9 @@
+# Spracherkennung ohne onnxruntime – für Python-Versionen, für die es onnxruntime noch nicht gibt.
+# install.py installiert faster-whisper danach mit --no-deps. Ohne onnxruntime fehlt nur die optionale
+# Stille-Erkennung (VAD); Connor schneidet Stille dann selbst ab.
+ctranslate2>=4.0,<5
+huggingface_hub>=0.21
+tokenizers>=0.13,<1
+av>=11
+tqdm
+sounddevice>=0.4

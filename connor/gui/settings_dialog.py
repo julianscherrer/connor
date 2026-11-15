@@ -164,7 +164,12 @@ class SettingsDialog(QDialog):
         self.voice_autosend.setChecked(settings.voice_autosend)
         voice_form.addRow("", self.voice_autosend)
         missing = voice.missing_packages()
-        state = ("✅ Installiert. " if not missing else "❌ " + voice.INSTALL_HINT + " ")
+        if missing:
+            state = "❌ " + voice.INSTALL_HINT + " "
+        elif voice.vad_available():
+            state = "✅ Installiert. "
+        else:
+            state = "✅ Installiert (ohne die optionale Stille-Erkennung onnxruntime – Diktieren funktioniert). "
         voice_form.addRow("", _hint(state + "Deine Stimme bleibt auf dem PC – nur das Sprachmodell wird beim "
                                     f"ersten Diktieren einmalig heruntergeladen (nach {models_dir()})."))
         column.addWidget(voice_box)

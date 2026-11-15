@@ -174,10 +174,11 @@ Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small»
 | Connor sagt «ich suche» und hört auf | Passiert mit Version 1.1 nicht mehr: Connor sucht dann selbst. Sicher geht's mit dem **🌐**-Knopf oder `/suche …`. |
 | Connor speichert nichts von selbst | Das Modell kann keine Tools → anderes Modell wählen oder `/merke` benutzen. |
 | Websuche klappt nicht | Internet prüfen. Blockiert eine Suchmaschine, weicht Connor automatisch aus (DuckDuckGo → Bing → Wikipedia). Virenscanner, die HTTPS prüfen, sind dank Windows-Zertifikaten kein Problem. |
-| 🎤 «Spracherkennung nicht installiert» | `start.bat` oder `update.bat` nochmal ausführen. Klappt die Installation nicht, ist deine Python-Version vielleicht zu neu – Python 3.12 oder 3.13 funktioniert sicher. |
+| 🎤 «Spracherkennung nicht installiert» | `update.bat` ausführen. Bei sehr neuen Python-Versionen (z. B. 3.15) installiert Connor die Spracherkennung automatisch ohne das Zusatzpaket *onnxruntime* – Diktieren funktioniert trotzdem, Connor schneidet Stille dann selbst ab. |
 | 🎤 Es wird nur Stille aufgenommen | Windows → Einstellungen → Datenschutz und Sicherheit → Mikrofon → «Desktop-Apps den Zugriff erlauben». |
 | 🎤 Sprachmodell lädt nicht | Beim ersten Mal braucht Connor Internet. Den Ordner `models/` kannst du löschen, dann lädt er neu. |
 | Fenster verschwunden | Connor läuft im Tray (unten rechts, evtl. unter «^»). Klick aufs Icon. |
+| Beim Einrichten «No such file or directory … Long Path» | Der Connor-Ordner liegt zu tief. Verschieb ihn an einen kurzen Ort (z. B. `C:\Connor`), lösch den Ordner `.venv` und starte `start.bat` nochmal. |
 | Etwas anderes | In `data/connor.log` steht, was passiert ist. Zum Debuggen im Terminal starten: `.venv\Scripts\python.exe main.py` |
 
 ---
@@ -198,6 +199,7 @@ connor/
   timeparse.py    versteht «morgen um 18 Uhr», «in 2 Stunden», «Freitag abends»
   gui/            das Fenster (PySide6 / Qt)
 tests/            automatische Tests (mit einem simulierten Ollama)
+install.py        installiert/aktualisiert die Pakete (von start.bat und update.bat aufgerufen)
 ```
 
 Connors Persönlichkeit steht in `connor/prompts.py` (`BASE`, `WRITER_MODE`, `ASSISTANT_MODE`) – dort kannst du sie anpassen. Für kleine Wünsche reicht das Feld «Extra-Wünsche» in den Einstellungen.

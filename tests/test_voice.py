@@ -19,18 +19,54 @@ class FakeModel:
     def __init__(self, fail=False):
         self.fail = fail
         self.calls = []
+        self.audio = []
 
     def transcribe(self, audio, **kwargs):
         self.calls.append(kwargs)
+        self.audio.append(audio)
         if self.fail:
             raise RuntimeError("Library cublas64_12.dll is not found")
         return iter([Segment(" Hallo Connor,", 1.0), Segment("Untertitel im Auftrag des ZDF", 2.0),
                      Segment(" schreib weiter. ", 4.0)]), Info()
 
 
+def test_without_onnxruntime_silence_is_trimmed(tmp_path, monkeypatch):
+    transcriber = voice.Transcriber("small", "de", "cpu", root=tmp_path)
+    monkeypatch.setattr(voice, "missing_packages", lambda need_mic=True: [])
+    monkeypatch.setattr(voice, "vad_available", lambda: False)
+    model = FakeModel()
+    monkeypatch.setattr(transcriber, "_load", lambda device, compute: model)
+    quiet = np.full(32000, 0.001, dtype=np.float32)
+    speech = np.full(16000, 0.2, dtype=np.float32)
+    assert transcriber.transcribe(np.concatenate([quiet, speech, quiet])) == "Hallo Connor, schreib weiter."
+    assert model.calls[0]["vad_filter"] is False
+    assert 16000 <= len(model.audio[0]) <= 16000 + 2 * 4800 + 480
+    assert transcriber.transcribe(np.zeros(16000, dtype=np.float32)) == ""
+    assert len(model.calls) == 1, "pure silence never reaches the model"
+
+
+def test_broken_onnxruntime_falls_back(tmp_path, monkeypatch):
+    transcriber = voice.Transcriber("small", "de", "cpu", root=tmp_path)
+    monkeypatch.setattr(voice, "missing_packages", lambda need_mic=True: [])
+    monkeypatch.setattr(voice, "vad_available", lambda: True)
+
+    class BrokenVad(FakeModel):
+        def transcribe(self, audio, **kwargs):
+            if kwargs["vad_filter"]:
+                raise RuntimeError("Applying the VAD filter requires the onnxruntime package")
+            return super().transcribe(audio, **kwargs)
+
+    model = BrokenVad()
+    monkeypatch.setattr(transcriber, "_load", lambda device, compute: model)
+    assert transcriber.transcribe(np.full(16000, 0.2, dtype=np.float32)) == "Hallo Connor, schreib weiter."
+    assert [call["vad_filter"] for call in model.calls] == [False]
+    assert transcriber._vad_failed
+
+
 def test_transcribe_filters_hallucinations_and_reports_progress(tmp_path, monkeypatch):
     transcriber = voice.Transcriber("small", "de", "cpu", root=tmp_path)
     monkeypatch.setattr(voice, "missing_packages", lambda need_mic=True: [])
+    monkeypatch.setattr(voice, "vad_available", lambda: True)
     model = FakeModel()
     monkeypatch.setattr(transcriber, "_load", lambda device, compute: model)
     progress = []
