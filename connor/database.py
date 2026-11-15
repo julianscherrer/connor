@@ -13,6 +13,10 @@ log = logging.getLogger(__name__)
 
 MEMORY_CATEGORIES = ("charakter", "welt", "ort", "plot", "idee", "story", "vorliebe", "notiz")
 STORY_CATEGORIES = frozenset({"charakter", "welt", "ort", "plot", "idee", "story"})
+GENERIC_TITLE_WORDS = frozenset(
+    "origin story stories backstory hintergrund hintergrundgeschichte ursprung geschichte charakter steckbrief "
+    "profil charakterbogen bogen notiz notizen idee ideen teil kapitel szene info infos fakten über".split()
+)
 MEMORY_STATUSES = ("kanon", "entwurf", "offen", "verworfen")
 REPEAT_OPTIONS = ("none", "daily", "weekly")
 CHAT_MODES = ("writer", "assistant")
@@ -751,6 +755,26 @@ class Database:
 
         results.sort(key=lambda c: (priority(c), -c["hits"], c["score"]))
         return results[:limit]
+
+    def named_memories(self, text: str, project: str = "", strict: bool = True) -> tuple[list[dict], set[str]]:
+        """Entries whose title names something the text mentions («Unstoppable», «Lira»).
+        Returns (entries, the matching names). Generic title words like «Origin Story» do not count."""
+        words = set(_WORD_RE.findall(text.casefold()))
+        current = project.strip().casefold()
+        found: list[dict] = []
+        names: set[str] = set()
+        for memory in self.list_memories():
+            if memory["status"] == "verworfen":
+                continue
+            own = memory["project"].strip().casefold()
+            if strict and current and (own not in (current, "") or (not own and memory["category"] in STORY_CATEGORIES)):
+                continue
+            title_names = {t for t in keywords(memory["title"], 8) if t not in GENERIC_TITLE_WORDS}
+            hits = title_names & words
+            if hits:
+                found.append(memory)
+                names |= hits
+        return found, names
 
     def suggest_project(self, text: str) -> str:
         """If the text names characters/places of exactly one project, that project – else ""."""

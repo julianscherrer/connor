@@ -281,3 +281,34 @@ def test_tool_call_with_raw_newlines_in_text_is_parsed():
     raw = '<tool_call>{"name": "create_file", "arguments": {"title": "X", "content": "Zeile 1\nZeile 2"}}</tool_call>'
     calls = parse_text_tool_calls(raw, {"create_file"})
     assert calls[0]["function"]["arguments"]["content"] == "Zeile 1\nZeile 2"
+
+
+def test_named_character_wins_over_generic_words(db, fake):
+    from connor.engine import SOURCES_EVENT
+
+    engine = make_engine(db, fake)
+    db.add_memory("Mania – Origin Story", "Origin Story: Mania wurde in einem Labor erschaffen. Ihre Origin "
+                  "Story beginnt mit einem Unfall.", "charakter", "Comic")
+    db.add_memory("Unstoppable", "Ehemaliger Feuerwehrmann, wurde nach einem Brand unverwundbar.", "charakter", "Comic")
+    db.add_memory("Rivalen", "Unstoppable und Mania sind Rivalen seit Heft 1.", "plot", "Comic")
+    chat = db.create_chat("x", "Comic")
+    db.add_message(chat, "user", "Nenne mir die Origin Story von Unstoppable")
+    events = []
+    engine.respond(chat, on_event=events.append)
+    context = fake.requests[0]["messages"][-1]["content"]
+    assert "Gefragt ist nach: Unstoppable" in context
+    assert "Feuerwehrmann" in context and "Rivalen" in context
+    assert "Labor" not in context, "Mania's story must not be handed over for Unstoppable"
+    assert events[0].startswith(SOURCES_EVENT) and "Unstoppable" in events[0] and "Mania" not in events[0]
+    assert "erfinde nichts" in fake.requests[0]["messages"][0]["content"]
+
+
+def test_unknown_name_gets_no_foreign_story(db, fake):
+    engine = make_engine(db, fake)
+    db.add_memory("Mania", "Origin Story: im Labor erschaffen.", "charakter", "Comic")
+    db.add_memory("Unstoppable", "Ex-Feuerwehrmann.", "charakter", "Comic")
+    chat = db.create_chat("x", "Comic")
+    db.add_message(chat, "user", "Wie geht die Origin Story von Unstoppable?")
+    engine.respond(chat)
+    context = fake.requests[0]["messages"][-1]["content"]
+    assert "Ex-Feuerwehrmann" in context and "Labor" not in context

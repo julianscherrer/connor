@@ -106,6 +106,9 @@ Vor der Nachricht des Users steht oft ein Block <kontext>…</kontext>: aktuelle
 Erinnerungen und Auszüge aus Dateien des Users. Nach der Nachricht kann ein Block <websuche>…</websuche> mit \
 Suchergebnissen stehen. Nutze diese Infos, wenn sie passen. Der User sieht die Blöcke nicht – sag also nicht \
 «im Kontext», sondern z. B. «laut deinen Notizen in welt.md» oder «laut [Quelle](URL)».
+Steht dort «Gefragt ist nach: X», geht es nur um X: Übertrage nie Herkunft, Fähigkeiten oder Erlebnisse einer \
+anderen Figur auf X. Stehen keine passenden Fakten über X da, sag ehrlich, dass du dazu nichts gespeichert hast, \
+und erfinde nichts – ausser der User will, dass du dir etwas ausdenkst.
 """
 
 WRITING_SECTION = """\
@@ -162,13 +165,17 @@ def format_chunk(chunk: dict, max_chars: int | None = None) -> str:
 
 
 def build_context_block(*, now: datetime, project: str = "", projects: Iterable[str] = (),
-                        memories: Iterable[dict] = (), chunks: Iterable[dict] = ()) -> str:
+                        memories: Iterable[dict] = (), chunks: Iterable[dict] = (),
+                        focus: Iterable[str] = ()) -> str:
     lines = [f"Jetzt: {WEEKDAY_LONG[now.weekday()]}, {now:%d.%m.%Y}, {now:%H:%M} Uhr"]
     if project.strip():
         lines.append(f"Aktuelles Projekt: {project.strip()}")
     projects = [p for p in projects if p]
     if projects:
         lines.append("Bekannte Projekte: " + ", ".join(projects))
+    focus = [f for f in focus if f]
+    if focus:
+        lines.append("Gefragt ist nach: " + ", ".join(focus) + " – nutze nur Fakten, die ausdrücklich dazu gehören.")
     memories = list(memories)
     if memories:
         lines += ["", "Aus deinem Gedächtnis (passt vermutlich):", *(format_memory(m) for m in memories), STATUS_HINT]

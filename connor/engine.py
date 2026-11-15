@@ -34,6 +34,7 @@ NUDGE_REMINDER = ("(Connor-App, nicht vom User: Du hast eine Erinnerung zugesagt
 NUDGE_FILE = ("(Connor-App, nicht vom User: Es wurde keine Datei erstellt – dafür musst du `create_file` aufrufen. "
               "Ruf `create_file` jetzt auf, mit dem vollständigen Inhalt in content. Danach reicht ein kurzer Satz.)")
 SUMMARY_WORDS = re.compile(r"(?i)\b(zusammenfass\w*|fass\w*\s.*zusammen|überblick|worum geht|inhalt\w*|summar\w*)")
+SOURCES_EVENT = "🧠 Wissen: "
 
 _ANNOUNCE = [re.compile(pattern, re.I) for pattern in (
     r"\b(?:ich|lass\s+mich)\b[^.!?\n]{0,50}?\b(?:nachschau\w*|nachseh\w*|nachguck\w*|nachzuschauen|nachzusehen|"
@@ -162,6 +163,7 @@ class ConnorEngine:
         self._capabilities: dict[tuple[str, str], list[str] | None] = {}
         self._no_tools: set[str] = set()
         self._no_think: set[str] = set()
+        self.last_sources: list[str] = []
 
     def new_client(self) -> OllamaClient:
         return OllamaClient(self.settings.ollama_url)
@@ -205,7 +207,8 @@ class ConnorEngine:
         return int((self.settings.context_size - TOKEN_RESERVE) * CHARS_PER_TOKEN * DOC_SHARE)
 
     def document_context(self, query: str, *, project: str = "", doc_ids: list[int] | None = None,
-                         budget: int | None = None, library_chars: int = LIBRARY_CHARS) -> list[dict]:
+                         budget: int | None = None, library_chars: int = LIBRARY_CHARS,
+                         focus: set[str] | None = None) -> list[dict]:
         """Excerpts from the user's files: attached files first, then matching passages from the library."""
         budget = self.context_budget() if budget is None else budget
         selected: list[dict] = []
@@ -236,6 +239,8 @@ class ConnorEngine:
                 own_project = bool(current) and chunk["project"].strip().casefold() == current
                 if chunk["hits"] < (1 if own_project else min(2, len(words))) or len(chunk["content"]) > room:
                     continue
+                if focus and not any(name in chunk["content"].casefold() for name in focus):
+                    continue
                 selected.append(chunk)
                 room -= len(chunk["content"])
                 if room < 300:
@@ -265,11 +270,25 @@ class ConnorEngine:
 
         system = self.system_prompt(mode, "tools" if tools else "plain")
         preference_ids = {m["id"] for m in self._preferences()}
-        memories = [m for m in self.db.search_memories(f"{query} {project}", project=project, limit=8, strict=True,
-                                                       include_discarded=False) if m["id"] not in preference_ids]
-        chunks = self.document_context(query, project=project, doc_ids=[d["id"] for d in self.db.chat_documents(chat_id)])
+        named, names = self.db.named_memories(last_user or query, project, strict=bool(project))
+        named = [m for m in named if m["id"] not in preference_ids]
+        named_ids = {m["id"] for m in named}
+
+        def about_names(text: str) -> bool:
+            low = text.casefold()
+            return any(name in low for name in names)
+
+        others = [m for m in self.db.search_memories(f"{query} {project}", project=project, limit=12, strict=True,
+                                                     include_discarded=False)
+                  if m["id"] not in preference_ids and m["id"] not in named_ids
+                  and (not names or about_names(f"{m['title']} {m['content']}"))]
+        memories = named[:10] + others[:max(0, 8 - len(named))]
+        chunks = self.document_context(query, project=project, doc_ids=[d["id"] for d in self.db.chat_documents(chat_id)],
+                                       focus=names)
+        focus = list(dict.fromkeys(m["title"] for m in named))
         context = build_context_block(now=datetime.now(), project=project, projects=self.db.list_projects()[:20],
-                                      memories=memories, chunks=chunks)
+                                      memories=memories, chunks=chunks, focus=focus)
+        self.last_sources = list(dict.fromkeys([m["title"] for m in memories] + [c["name"] for c in chunks]))
 
         budget = max(4000, (self.settings.context_size - TOKEN_RESERVE) * CHARS_PER_TOKEN - len(system) - len(context))
         selected: list[dict] = []
@@ -304,6 +323,9 @@ class ConnorEngine:
         executor = ToolExecutor(self.db, self.settings, project=chat.get("project", ""), confirm=confirm,
                                 fallback_content=lambda: self._file_fallback(parts, previous_answer))
         messages = self.build_messages(chat_id, tools=tools_on)
+        if self.last_sources:
+            shown = " · ".join(self.last_sources[:6]) + (" …" if len(self.last_sources) > 6 else "")
+            on_event(f"{SOURCES_EVENT}{shown}")
         stored = self.db.get_messages(chat_id)
         last_user = next((m["content"] for m in reversed(stored) if m["role"] == "user"), "")
         last_user_index = max((i for i, m in enumerate(stored) if m["role"] == "user"), default=len(stored))
