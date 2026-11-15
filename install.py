@@ -19,6 +19,16 @@ MARKER = Path(sys.prefix) / ".installed"
 Runner = Callable[..., bool]
 
 
+def stop_running_connor() -> bool:
+    """A running Connor would keep using the old code and lock files – stop it before installing."""
+    try:
+        from connor import system
+
+        return system.stop_running_connor()
+    except Exception:  # noqa: BLE001 - never block the installation
+        return False
+
+
 def pip(*args: str) -> bool:
     # Brand-new Python versions often have no ready-made PyYAML yet. Without a C compiler its optional
     # speed-up cannot be built – so let PyYAML install as plain Python (Connor does not need the speed-up).
@@ -46,7 +56,8 @@ def _pause() -> None:
             pass
 
 
-def main(argv: list[str] | None = None, run: Runner = pip, marker: Path = MARKER) -> int:
+def main(argv: list[str] | None = None, run: Runner = pip, marker: Path = MARKER,
+         stop: Callable[[], bool] = stop_running_connor) -> int:
     argv = sys.argv[1:] if argv is None else argv
     try:
         sys.stdout.reconfigure(errors="replace")
@@ -59,6 +70,8 @@ def main(argv: list[str] | None = None, run: Runner = pip, marker: Path = MARKER
         except OSError:
             pass
 
+    if stop():
+        print("\n Connor lief noch im Hintergrund – ich habe es für das Update beendet.")
     print("\n Installiere bzw. aktualisiere Connors Pakete ...\n")
     run("install", "--upgrade", "pip")
     if not run("install", "-r", str(ROOT / "requirements.txt")):

@@ -156,8 +156,8 @@ Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small»
 
 ## Update und Backup
 
-- **Update:** Doppelklick auf `update.bat` – holt die neuste Version von GitHub und installiert neue Pakete. Danach Connor mit `start.bat` neu starten. Deine Daten bleiben unverändert und werden automatisch übernommen.
-  *(Ohne `update.bat`: `git pull` und dann `start.bat` – das installiert neue Pakete ebenfalls automatisch.)*
+- **Update:** Doppelklick auf `update.bat` – beendet ein laufendes Connor (auch im Tray), holt die neuste Version von GitHub und installiert neue Pakete. Danach Connor mit `start.bat` neu starten. Deine Daten bleiben unverändert und werden automatisch übernommen.
+  *(Ohne `update.bat`: `git pull` und dann `start.bat` – Connor ersetzt eine noch laufende alte Version automatisch.)*
 - **Backup:** Den Ordner `data/` kopieren. Zum Wiederherstellen zurückkopieren.
 - **Auf einen anderen PC umziehen:** Connor dort installieren und den `data/`-Ordner hineinkopieren.
 
@@ -178,6 +178,7 @@ Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small»
 | 🎤 Es wird nur Stille aufgenommen | Windows → Einstellungen → Datenschutz und Sicherheit → Mikrofon → «Desktop-Apps den Zugriff erlauben». |
 | 🎤 Sprachmodell lädt nicht | Beim ersten Mal braucht Connor Internet. Den Ordner `models/` kannst du löschen, dann lädt er neu. |
 | Fenster verschwunden | Connor läuft im Tray (unten rechts, evtl. unter «^»). Klick aufs Icon. |
+| Nach einem Update verhält sich Connor noch wie vorher | Eine alte Version lief noch im Tray. Seit Version 1.2 erledigt sich das von selbst; sonst: Rechtsklick aufs Connor-Symbol im Tray → **Beenden**, dann `start.bat`. |
 | Beim Einrichten «No such file or directory … Long Path» | Der Connor-Ordner liegt zu tief. Verschieb ihn an einen kurzen Ort (z. B. `C:\Connor`), lösch den Ordner `.venv` und starte `start.bat` nochmal. |
 | Etwas anderes | In `data/connor.log` steht, was passiert ist. Zum Debuggen im Terminal starten: `.venv\Scripts\python.exe main.py` |
 

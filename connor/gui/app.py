@@ -1,16 +1,17 @@
 """Starts the Qt application: logging, theme, single instance and the main window."""
 from __future__ import annotations
 
-import getpass
 import logging
 import sys
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 
+from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from .. import APP_NAME, __version__, websearch
+from .. import APP_NAME, __version__, build_id, system, websearch
 from ..database import Database
 from ..paths import db_path, log_path
 from ..settings import Settings
@@ -59,23 +60,55 @@ def _set_windows_app_id() -> None:
         pass
 
 
-def _server_name() -> str:
-    try:
-        user = getpass.getuser()
-    except Exception:  # noqa: BLE001
-        user = "user"
-    return f"connor-assistant-{user}"
+def instance_action(message: str, build: str) -> str:
+    """What a running Connor does when it gets a message from a Connor that is just starting:
+    "show" (same code), "replace" (newer/other code – make room), "quit" (update) or "ignore"."""
+    message = message.strip()
+    if message == "quit":
+        return "quit"
+    if message.startswith("show"):
+        other = message[4:].strip()
+        return "replace" if other and other != build else "show"
+    return "ignore"
 
 
-def _activate_running_instance(name: str) -> bool:
+def _contact_running_instance(name: str, build: str) -> str:
+    """"" = nobody running, "same" = it shows its window, "replaced" = it quits, "old" = an old Connor
+    that does not understand the question."""
     socket = QLocalSocket()
     socket.connectToServer(name)
     if not socket.waitForConnected(400):
-        return False
-    socket.write(b"show")
+        return ""
+    socket.write(f"show {build}\n".encode())
     socket.flush()
     socket.waitForBytesWritten(400)
+    reply = bytes(socket.readAll()) if socket.waitForReadyRead(2500) else b""
     socket.disconnectFromServer()
+    answer = reply.decode("utf-8", "ignore").strip()
+    if answer == "ok":
+        return "same"
+    return "replaced" if answer == "quit" else "old"
+
+
+def _wait_until_gone(timeout: float) -> bool:
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if not system.instance_running():
+            return True
+        time.sleep(0.2)
+    return not system.instance_running()
+
+
+def _take_over(name: str, build: str) -> bool:
+    """Returns False if the same Connor is already running (then it just shows its window)."""
+    state = _contact_running_instance(name, build)
+    if state == "same":
+        return False
+    if state:
+        log.info("Eine andere Connor-Version läuft noch (%s) – ich ersetze sie.", state)
+        if state == "old" or not _wait_until_gone(6):
+            system.stop_processes(system.connor_processes())
+            _wait_until_gone(4)
     return True
 
 
@@ -88,8 +121,9 @@ def run(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     app.setQuitOnLastWindowClosed(False)
 
-    name = _server_name()
-    if _activate_running_instance(name):
+    name = system.server_name()
+    build = build_id()
+    if not _take_over(name, build):
         log.info("Connor läuft schon – bringe das Fenster nach vorne.")
         return 0
     QLocalServer.removeServer(name)
@@ -113,11 +147,26 @@ def run(argv: list[str] | None = None) -> int:
     settings = Settings.load()
     window = MainWindow(db, settings, icon)
 
+    def handle(connection) -> None:
+        action = instance_action(bytes(connection.readAll()).decode("utf-8", "ignore"), build)
+        if action == "show":
+            connection.write(b"ok\n")
+            connection.flush()
+            window.show_normal()
+        elif action == "replace":
+            log.info("Eine neuere Version von Connor startet – ich mache Platz.")
+            connection.write(b"quit\n")
+            connection.flush()
+            QTimer.singleShot(300, window.quit)
+        elif action == "quit":
+            log.info("Connor wird für ein Update beendet.")
+            QTimer.singleShot(0, window.quit)
+
     def on_connection() -> None:
-        connection = server.nextPendingConnection()
-        if connection is not None:
+        while server.hasPendingConnections():
+            connection = server.nextPendingConnection()
             connection.disconnected.connect(connection.deleteLater)
-        window.show_normal()
+            connection.readyRead.connect(lambda c=connection: handle(c))
 
     server.newConnection.connect(on_connection)
 
