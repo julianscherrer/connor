@@ -15,6 +15,7 @@ Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welt
 | ✍️ **Schreibwerkstatt** | Deine Geschichten in einem eigenen Editor. Ein Klick, und Connor **schreibt weiter**, liefert **Ideen** oder gibt **ehrliches Feedback**. Du entscheidest, was übernommen wird. |
 | 📚 **Deine Dateien** | Zieh Dateien oder ganze Ordner ins Fenster – **Markdown, Text, Word, PDF, E-Books, Audio**. Connor findet darin die passenden Stellen, wenn ihr darüber redet. |
 | 🎤 **Diktieren** | Klicken, sprechen, fertig – die Spracherkennung (Whisper) läuft **lokal**. Auch Sprachmemos und Aufnahmen werden transkribiert. |
+| 📄 **Word-Dateien erstellen** | «Mach mir einen Charakterbogen für Lira als Word» – Connor erstellt die Datei, Skripte sogar im echten **Drehbuch-Format**. Jede Antwort hat einen **💾 Word**-Knopf, Geschichten exportierst du in der Schreibwerkstatt. |
 | 🧠 **Gedächtnis** | Connor merkt sich Charaktere, Orte, Welten, Plot-Ideen und deine Vorlieben – sortiert nach Projekt und Status (Kanon, Entwurf, offen, verworfen). Passende Einträge holt er automatisch hervor. |
 | ⏰ **Erinnerungen** | «Erinnere mich morgen um 18 Uhr an Kapitel 3» – Connor meldet sich pünktlich, auch minimiert im Tray. Auch wiederholend (täglich/wöchentlich). |
 | 🔎 **Websuche** | Sucht im Internet, liest die besten Seiten und fasst mit Quellen zusammen. Mit **🌐** erzwingst du die Suche. Abschaltbar. |
@@ -130,6 +131,13 @@ Alles, was Connor gelesen hat: Markdown (auch ganze Obsidian-Ordner), Text, Word
 
 > Alte Word-Dateien (.doc) und eingescannte PDFs (nur Bilder) kann Connor nicht lesen – speichere sie als .docx bzw. nutze ein PDF mit Text.
 
+### Dateien erstellen (Word, Markdown, Text)
+- **Im Chat einfach sagen:** «Mach mir einen Charakterbogen für Lira als Word», «Schreib Szene 3 als Skript in eine Word-Datei» oder «Speicher das als Word». Connor erstellt die Datei und zeigt im Chat einen Link zum **Öffnen** und **Ordner öffnen**.
+- **Skripte** bekommen automatisch ein echtes Drehbuch-Layout: Szenenköpfe (INT. TAVERNE – NACHT), Figurennamen, Regieanweisungen und Dialoge eingerückt, alles in Courier.
+- **💾 Word** oben rechts an jeder Antwort speichert genau diese Antwort als Word-Datei – das klappt mit jedem Modell.
+- **Schreibwerkstatt:** **💾 Exportieren** speichert die ganze Geschichte als Word, Markdown oder Text.
+- Die Dateien landen in **Dokumente\Connor** (änderbar in den Einstellungen). Connor überschreibt nie eine bestehende Datei – er hängt dann «(2)» an.
+
 ### Gedächtnis
 Hier siehst und bearbeitest du alles, was Connor weiss. Filtern nach Projekt und Kategorie, Doppelklick zum Bearbeiten. **Kanon** = steht fest, **Entwurf** = Idee in Arbeit, **offen** = ungeklärt, **verworfen** = nicht mehr verwenden.
 
@@ -183,6 +191,7 @@ connor/
   tools.py        Werkzeuge: Gedächtnis, Dokumente, Erinnerungen, Websuche
   database.py     SQLite: Chats, Gedächtnis, Dokumente (mit Volltextsuche), Erinnerungen, Geschichten
   documents.py    liest Markdown, Text, Word, ODT, PDF, EPUB, HTML und Audio
+  files.py        erstellt Word-Dateien (auch im Drehbuch-Layout), Markdown und Text
   voice.py        Mikrofon und lokale Spracherkennung (faster-whisper)
   llm.py          Ollama-Anbindung (Streaming, Tools, Abbrechen, Modell vorladen)
   websearch.py    DuckDuckGo / Bing / Wikipedia / SearXNG + die besten Seiten lesen

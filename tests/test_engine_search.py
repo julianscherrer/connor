@@ -224,3 +224,60 @@ def test_query_helpers():
     assert sanitize_query("Suchanfrage: «Fussball WM 2026 Sieger»", "x") == "Fussball WM 2026 Sieger"
     assert sanitize_query("", "fallback") == "fallback"
     assert sanitize_query("Das ist eine sehr lange Antwort " * 10, "fallback") == "fallback"
+
+
+def test_create_file_tool_shows_link(db, fake, tmp_path):
+    from pathlib import Path
+
+    from connor.files import FILE_EVENT
+
+    engine = make_engine(db, fake, files_dir=str(tmp_path))
+    chat = db.create_chat("x")
+    db.add_message(chat, "user", "Mach mir einen Charakterbogen für Lira als Word")
+    fake.script += [
+        {"tool_calls": [tool_call("create_file", title="Lira – Charakterbogen",
+                                  content="# Lira\n\n| Alter | 19 |\n|---|---|\n\n- mutig\n- stur")]},
+        {"content": "Fertig – dein Charakterbogen liegt bereit!"},
+    ]
+    events = []
+    reply = engine.respond(chat, on_event=events.append)
+    assert events == [FILE_EVENT + str(tmp_path / "Lira – Charakterbogen.docx")]
+    assert Path(events[0].removeprefix(FILE_EVENT)).exists()
+    assert reply.changes == {"files"}
+
+
+def test_save_previous_answer_as_word(db, fake, tmp_path):
+    from connor.documents import read_document
+
+    engine = make_engine(db, fake, files_dir=str(tmp_path))
+    chat = db.create_chat("x")
+    db.add_message(chat, "user", "Schreib mir einen Steckbrief für Tom")
+    db.add_message(chat, "assistant", "# Tom\n\nSchmied aus Eisenfels, 34 Jahre, brummig aber herzlich.")
+    db.add_message(chat, "user", "Speicher das bitte als Word")
+    fake.script += [{"tool_calls": [tool_call("create_file", title="Tom – Steckbrief")]}, {"content": "Erledigt!"}]
+    engine.respond(chat)
+    assert "Schmied aus Eisenfels" in read_document(tmp_path / "Tom – Steckbrief.docx")
+
+
+def test_claimed_file_without_tool_gets_nudged(db, fake, tmp_path):
+    engine = make_engine(db, fake, files_dir=str(tmp_path))
+    chat = db.create_chat("x")
+    db.add_message(chat, "user", "Erstell mir ein Word mit Liras Steckbrief")
+    fake.script += [
+        {"content": "Hier ist dein Word-Dokument! 📄"},
+        {"tool_calls": [tool_call("create_file", title="Lira",
+                                  content="# Lira\n\nElfe, 19 Jahre alt, hat Angst vor Wasser und liebt den Wald.")]},
+        {"content": "Jetzt liegt es wirklich bereit."},
+    ]
+    engine.respond(chat)
+    assert (tmp_path / "Lira.docx").exists()
+    assert "create_file" in fake.requests[1]["messages"][-1]["content"]
+    assert not missing_tool_nudge("Ein Dokument ist eine gespeicherte Datei.", set(), "Was ist ein Dokument?")
+
+
+def test_tool_call_with_raw_newlines_in_text_is_parsed():
+    from connor.llm import parse_text_tool_calls
+
+    raw = '<tool_call>{"name": "create_file", "arguments": {"title": "X", "content": "Zeile 1\nZeile 2"}}</tool_call>'
+    calls = parse_text_tool_calls(raw, {"create_file"})
+    assert calls[0]["function"]["arguments"]["content"] == "Zeile 1\nZeile 2"

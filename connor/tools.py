@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable
 
-from . import websearch
+from . import files, websearch
 from .database import MEMORY_CATEGORIES, MEMORY_STATUSES, Database, str_to_dt
 from .prompts import format_chunk, format_memory
 from .settings import Settings
@@ -72,6 +72,19 @@ def tool_schemas(web: bool = True) -> list[dict]:
             ("text", "when")),
         _fn("list_reminders", "List the user's upcoming reminders."),
         _fn("delete_reminder", "Delete a reminder by id.", {"reminder_id": {"type": "integer"}}, ("reminder_id",)),
+        _fn("create_file",
+            "Create a file for the user, e.g. a Word document with a character sheet, a script, an outline, a "
+            "synopsis or a story. It is saved in the user's Connor folder. Write the COMPLETE content in Markdown "
+            "(# headings, - lists, | tables |, **bold**). If the user wants your previous answer as a file, "
+            "content may be left empty.",
+            {"title": {"type": "string", "description": "Title and file name, e.g. 'Lira – Charakterbogen'"},
+             "content": {"type": "string", "description": "The complete content in Markdown"},
+             "format": {"type": "string", "enum": ["docx", "md", "txt"], "description": "docx = Word (default)"},
+             "layout": {"type": "string", "enum": ["dokument", "drehbuch"],
+                        "description": "drehbuch = screenplay layout for scripts: scene headings like "
+                                       "'INT. TAVERNE – NACHT', character names in CAPITALS on their own line, "
+                                       "then their dialogue"}},
+            ("title",)),
     ]
     if web:
         tools += [
@@ -111,13 +124,16 @@ def _choice(value, options, default):
 class ToolExecutor:
     def __init__(self, db: Database, settings: Settings, project: str = "",
                  confirm: Callable[[str], bool] | None = None,
-                 now: Callable[[], datetime] = datetime.now):
+                 now: Callable[[], datetime] = datetime.now,
+                 fallback_content: Callable[[], str] | None = None):
         self.db = db
         self.settings = settings
         self.project = project
         self.confirm = confirm
         self.now = now
+        self.fallback_content = fallback_content
         self.changed: set[str] = set()
+        self.created_files: list[str] = []
 
     def describe(self, name: str, args: dict) -> str:
         a = args if isinstance(args, dict) else {}
@@ -131,6 +147,7 @@ class ToolExecutor:
             "create_reminder": lambda: f"⏰ Neue Erinnerung: {_text(a.get('text'))}",
             "list_reminders": lambda: "⏰ Schaue in deine Erinnerungen",
             "delete_reminder": lambda: f"⏰ Lösche Erinnerung #{_text(a.get('reminder_id'))}",
+            "create_file": lambda: f"📄 Erstelle Datei: «{_text(a.get('title'))}»",
             "web_search": lambda: f"🔎 Suche im Internet: «{_text(a.get('query'))}»",
             "read_webpage": lambda: f"🌐 Lese Webseite: {_text(a.get('url'))}",
         }
@@ -250,6 +267,24 @@ class ToolExecutor:
             return f"FEHLER: Eine Erinnerung #{reminder_id} gibt es nicht."
         self.changed.add("reminder")
         return f"OK: Erinnerung #{reminder_id} gelöscht."
+
+    # ----------------------------------------------------------------- files
+    def _tool_create_file(self, a: dict) -> str:
+        title = _text(a.get("title")) or "Connor-Dokument"
+        content = _text(a.get("content"))
+        if len(content) < 60 and self.fallback_content is not None:
+            content = self.fallback_content().strip() or content
+        if not content:
+            return "FEHLER: content fehlt – schreib den vollständigen Inhalt der Datei in content."
+        fmt = _choice(a.get("format"), files.FORMATS, "docx")
+        layout = _choice(a.get("layout"), files.LAYOUTS, "dokument")
+        try:
+            path = files.create_file(files.output_folder(self.settings.files_dir), title, content, fmt, layout)
+        except OSError as exc:
+            return f"FEHLER: Die Datei konnte nicht gespeichert werden ({exc})."
+        self.created_files.append(str(path))
+        self.changed.add("files")
+        return f"OK: Datei erstellt: {path}"
 
     # ------------------------------------------------------------------- web
     def _allowed(self, question: str) -> bool:

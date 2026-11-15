@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from connor import voice, websearch  # noqa: E402
 from connor.gui.main_window import MainWindow  # noqa: E402
@@ -310,3 +310,30 @@ def test_continuation_separator():
     assert continuation_separator("Er ging und ") == ""
     assert continuation_separator("Absatz\n") == "\n"
     assert continuation_separator("Absatz\n\n") == ""
+
+
+def test_save_answer_as_word_and_export_story(window, db, fake, tmp_path):
+    from connor.documents import read_document
+    from connor.gui.widgets import MessageBubble
+
+    window.settings.files_dir = str(tmp_path / "Connor")
+    fake.script.append({"content": "# Lira\n\n**Alter:** 19\n\n- mutig\n- stur"})
+    chat = window.chat_tab
+    chat.input.setPlainText("Steckbrief für Lira bitte")
+    chat.send()
+    assert wait_until(lambda: not chat.busy)
+    bubble = [b for b in chat.view.findChildren(MessageBubble) if b.role == "assistant"][-1]
+    bubble.save_button.click()
+    saved = tmp_path / "Connor" / "Lira.docx"
+    assert saved.exists() and "Alter: 19" in read_document(saved)
+    assert db.get_messages(chat.chat_id)[-1]["content"].endswith("Lira.docx")
+    labels = [label.text() for label in chat.view.findChildren(QLabel)]
+    assert any("Ordner öffnen" in text and "Lira.docx" in text for text in labels)
+
+    desk = window.writing_tab
+    desk.new_story()
+    desk.title_edit.setText("Der Drache")
+    desk.editor.setPlainText("Erster Absatz.\n\nZweiter Absatz.")
+    desk.save_current()
+    target = desk.export_to(tmp_path / "Export.docx")
+    assert read_document(target) == "# Der Drache\n\nErster Absatz.\n\nZweiter Absatz."

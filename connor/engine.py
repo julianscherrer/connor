@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Callable
 
 from .database import Database, keywords
+from .files import FILE_EVENT
 from .llm import (RECOMMENDED_MODEL, CancelToken, OllamaClient, OllamaError, ThinkingNotSupported,
                   ToolsNotSupported, parse_text_tool_calls, strip_think, strip_tool_markup)
 from .prompts import build_context_block, build_system_prompt
@@ -30,6 +31,8 @@ NUDGE_MEMORY = ("(Connor-App, nicht vom User: Du hast geschrieben, dass du dir e
                 "Danach reicht ein kurzer Satz.)")
 NUDGE_REMINDER = ("(Connor-App, nicht vom User: Du hast eine Erinnerung zugesagt – aber `create_reminder` wurde "
                   "nicht aufgerufen, also gibt es keine. Ruf `create_reminder` jetzt auf. Danach reicht ein kurzer Satz.)")
+NUDGE_FILE = ("(Connor-App, nicht vom User: Es wurde keine Datei erstellt – dafür musst du `create_file` aufrufen. "
+              "Ruf `create_file` jetzt auf, mit dem vollständigen Inhalt in content. Danach reicht ein kurzer Satz.)")
 SUMMARY_WORDS = re.compile(r"(?i)\b(zusammenfass\w*|fass\w*\s.*zusammen|überblick|worum geht|inhalt\w*|summar\w*)")
 
 _ANNOUNCE = [re.compile(pattern, re.I) for pattern in (
@@ -52,6 +55,16 @@ _REMINDER_CLAIMS = [re.compile(pattern, re.I) for pattern in (
     r"\bich\s+(?:werde\s+)?erinner\w*\s+dich\b",
     r"\berinnerung\b[^.!?\n]{0,30}?\b(?:gesetzt|erstellt|eingetragen|angelegt|gespeichert|steht)\b",
 )]
+_FILE_CLAIMS = [re.compile(pattern, re.I) for pattern in (
+    r"\b(?:datei|dokument|word\w*|docx)\b[^.!?\n]{0,50}?\b(?:erstellt|gespeichert|angelegt|bereit|fertig|abgelegt)\b",
+    r"\bich\s+(?:erstelle|mache|speichere|schreibe|generiere|exportiere)\b[^.!?\n]{0,60}?"
+    r"\b(?:datei|word\w*|dokument|docx)\b",
+    r"\b(?:hier|da)\s+ist\s+(?:dein|deine|das)\b[^.!?\n]{0,30}?\b(?:word\w*|datei|dokument)\b",
+)]
+_FILE_REQUEST = re.compile(
+    r"(?i)(\bals\s+(?:word|docx|datei|dokument|md|markdown|txt|textdatei)\b|\bword[-\s]?(?:datei|dokument|file)\b"
+    r"|\bdocx\b|\b(?:speicher|exportier|erstell|mach|schreib|generier)\w*\b[^.!?\n]{0,50}\b(?:word|datei|dokument)\b)"
+)
 _NEGATION = re.compile(r"(?i)\b(nicht|nichts|kein\w*|noch nie)\b")
 _FILLER = re.compile(
     r"^\s*(?:hey|hallo|hoi|hi|sali|salü|connor|bitte|also|kannst du(?: mir)?|könntest du(?: mir)?|sag mir|"
@@ -107,6 +120,8 @@ def missing_tool_nudge(text: str, used: set[str], user_text: str) -> str:
     if "create_reminder" not in used and _claims(_REMINDER_CLAIMS, content):
         if any(w in asked for w in ("erinner", "wecker", "reminder")):
             return NUDGE_REMINDER
+    if "create_file" not in used and _FILE_REQUEST.search(user_text) and _claims(_FILE_CLAIMS, content):
+        return NUDGE_FILE
     return ""
 
 
@@ -286,9 +301,14 @@ class ConnorEngine:
         chat = self.db.get_chat(chat_id) or {}
         mode = chat.get("mode", "writer")
         web_on = self.settings.web_enabled
-        executor = ToolExecutor(self.db, self.settings, project=chat.get("project", ""), confirm=confirm)
+        executor = ToolExecutor(self.db, self.settings, project=chat.get("project", ""), confirm=confirm,
+                                fallback_content=lambda: self._file_fallback(parts, previous_answer))
         messages = self.build_messages(chat_id, tools=tools_on)
-        last_user = next((m["content"] for m in reversed(self.db.get_messages(chat_id)) if m["role"] == "user"), "")
+        stored = self.db.get_messages(chat_id)
+        last_user = next((m["content"] for m in reversed(stored) if m["role"] == "user"), "")
+        last_user_index = max((i for i, m in enumerate(stored) if m["role"] == "user"), default=len(stored))
+        previous_answer = next((m["content"] for m in reversed(stored[:last_user_index]) if m["role"] == "assistant"), "")
+        parts: list[str] = []
         searched = False
         web_block = ""
 
@@ -301,7 +321,6 @@ class ConnorEngine:
             messages[-1] = {**messages[-1], "content": messages[-1]["content"] + web_block}
             searched = True
 
-        parts: list[str] = []
         used_tools: set[str] = set()
         rounds = 0
         nudged = False
@@ -336,10 +355,13 @@ class ConnorEngine:
                     if token.cancelled:
                         break
                     name, args = _call_parts(call)
-                    on_event(executor.describe(name, args))
+                    if name != "create_file":
+                        on_event(executor.describe(name, args))
                     result = executor.execute(name, args)
                     used_tools.add(name)
                     searched = searched or name == "web_search"
+                    if name == "create_file" and result.startswith("OK: Datei erstellt: "):
+                        on_event(FILE_EVENT + result.removeprefix("OK: Datei erstellt: "))
                     log.info("Werkzeug %s: %s", name, result[:200].replace("\n", " "))
                     tool_message = {"role": "tool", "tool_name": name, "content": result}
                     if call.get("id"):
@@ -396,6 +418,12 @@ class ConnorEngine:
             if name == "web_search" and query:
                 return query
         return sanitize_query(content, fallback)
+
+    @staticmethod
+    def _file_fallback(parts: list[str], previous_answer: str) -> str:
+        """«Speicher das als Word»: use what Connor wrote in this turn or, if that is short, his last answer."""
+        current = "\n\n".join(parts).strip()
+        return current if len(current) >= 200 else previous_answer
 
     def generate(self, system: str, prompt: str, *, on_chunk: Callable[[str], None] = _ignore,
                  token: CancelToken | None = None) -> Reply:

@@ -78,7 +78,7 @@ def _json_tool_call(raw: str) -> dict | None:
     if not (raw.startswith("{") and raw.endswith("}")):
         return None
     try:
-        data = json.loads(raw)
+        data = json.loads(raw, strict=False)
     except ValueError:
         return None
     if not isinstance(data, dict):

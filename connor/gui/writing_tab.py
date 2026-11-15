@@ -5,12 +5,13 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QTextCursor
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QTextBrowser, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QFont, QTextCursor
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QTextBrowser,
+                               QVBoxLayout, QWidget)
 
+from .. import files
 from ..database import Database
 from ..documents import ImportResult, collect_files, import_paths, normalize, read_document
 from ..engine import ConnorEngine, Reply
@@ -101,6 +102,10 @@ class WritingTab(QWidget):
         self.story_list.setMouseTracking(True)
         self.story_list.currentItemChanged.connect(self._on_story_selected)
         side_layout.addWidget(self.story_list, 1)
+        export_button = QPushButton("💾  Exportieren (Word …)")
+        export_button.setToolTip("Geschichte als Word-, Markdown- oder Textdatei speichern")
+        export_button.clicked.connect(self.export_story)
+        side_layout.addWidget(export_button)
         delete_button = QPushButton("🗑️  Geschichte löschen")
         delete_button.clicked.connect(self.delete_story)
         side_layout.addWidget(delete_button)
@@ -461,6 +466,36 @@ class WritingTab(QWidget):
                 worker.stop()
 
     # ---------------------------------------------------- dictation & files
+    def export_story(self) -> None:
+        self.save_current()
+        story = self.db.get_story(self.story_id) if self.story_id is not None else None
+        if story is None:
+            QMessageBox.information(self, "Nichts zu exportieren", "Leg zuerst eine Geschichte an.")
+            return
+        folder = files.output_folder(self.settings.files_dir)
+        suggestion = folder / f"{files.safe_filename(story['title'] or 'Geschichte')}.docx"
+        path, chosen = QFileDialog.getSaveFileName(self, "Geschichte exportieren", str(suggestion),
+                                                   "Word (*.docx);;Markdown (*.md);;Text (*.txt)")
+        if not path:
+            return
+        target = Path(path)
+        if target.suffix.lower() not in (".docx", ".md", ".txt"):
+            target = target.with_suffix({"Markdown": ".md", "Text": ".txt"}.get(chosen.split(" ")[0], ".docx"))
+        try:
+            self.export_to(target)
+        except OSError as exc:
+            QMessageBox.warning(self, "Hat nicht geklappt", f"Die Datei konnte nicht gespeichert werden:\n{exc}")
+            return
+        answer = QMessageBox.question(self, "Exportiert", f"Gespeichert als:\n{target}\n\nJetzt öffnen?")
+        if answer == QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def export_to(self, target: Path) -> Path:
+        story = self.db.get_story(self.story_id)
+        files.write_file(target, story["content"], title=story["title"], overwrite=True)
+        self.count_label.setText(f"💾 Exportiert: {target}")
+        return target
+
     def _on_dictated(self, text: str) -> None:
         cursor = self.editor.textCursor()
         before = self.editor.toPlainText()[: cursor.position()]

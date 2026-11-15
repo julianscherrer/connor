@@ -33,6 +33,7 @@ class Settings:
     voice_language: str = "de"
     voice_device: str = "auto"  # auto | cpu | cuda
     voice_autosend: bool = False
+    files_dir: str = ""  # empty = Dokumente\Connor
     minimize_to_tray: bool = True
     tray_hint_shown: bool = False
     window_geometry: str = ""

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog, QFrame, QHB
                                QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                                QVBoxLayout, QWidget)
 
+from .. import files
 from ..database import Database
 from ..documents import ImportResult, import_paths, supported_extensions
 from ..engine import ConnorEngine, Reply
@@ -172,6 +173,7 @@ class ChatTab(QWidget):
         main.addLayout(banner_row)
 
         self.view = ChatView()
+        self.view.save_requested.connect(self.save_as_word)
         main.addWidget(self.view, 1)
 
         self.attachment_bar = QWidget()
@@ -460,6 +462,22 @@ class ChatTab(QWidget):
         self._import_worker = None
         self.status.setText(self._status_text())
         self.view.add_event(f"⚠️ Dateien konnten nicht gelesen werden: {message}", error=True)
+
+    def save_as_word(self, text: str) -> None:
+        """The «💾 Word» button on an answer."""
+        if not text.strip():
+            return
+        try:
+            path = files.create_file(files.output_folder(self.settings.files_dir), files.title_from_text(text),
+                                     text, "docx")
+        except OSError as exc:
+            self.view.add_event(f"⚠️ Die Word-Datei konnte nicht gespeichert werden: {exc}", error=True)
+            return
+        event = files.FILE_EVENT + str(path)
+        if self.chat_id is not None:
+            self.db.add_message(self.chat_id, "event", event)
+        self.view.add_event(event)
+        self.view.scroll_to_bottom()
 
     def _on_dictated(self, text: str) -> None:
         current = self.input.toPlainText()

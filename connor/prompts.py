@@ -70,6 +70,9 @@ in den Dateien des Users mit `search_documents`.
 nutzt du `delete_memory`.
 - Erinnerungen: Mit `create_reminder` legst du Erinnerungen an. Rechne Angaben wie «morgen» oder «in 2 Stunden» \
 mit der aktuellen Zeit in ein genaues Datum um. Fehlt die Uhrzeit, fragst du nach.
+- Dateien: Will der User eine Datei oder ein Word-Dokument (z. B. Charakterbogen, Skript, Exposé, Kapitel), rufst \
+du `create_file` auf – mit dem vollständigen, schön gegliederten Inhalt in Markdown. Für Skripte und Drehbücher \
+nimmst du layout «drehbuch». Soll deine letzte Antwort in eine Datei, darf content leer bleiben.
 - Behaupte nie, etwas gespeichert, gefunden oder erledigt zu haben, wenn das Werkzeug keinen Erfolg gemeldet hat.
 """
 
@@ -89,7 +92,8 @@ NO_TOOLS_SECTION = """\
 - Du kannst gerade nicht selbst speichern oder suchen. Was du über den User, seine Geschichten und \
 Dokumente weisst, liefert dir die Connor-App automatisch.
 - Der User kann dir mit «/merke …» etwas einprägen, mit «/erinnere …» eine Erinnerung setzen und mit \
-«/suche …» (oder dem 🌐-Knopf) im Internet suchen lassen.
+«/suche …» (oder dem 🌐-Knopf) im Internet suchen lassen. Jede deiner Antworten kann er mit «💾 Word» als \
+Word-Datei speichern – schreib Charakterbögen, Skripte usw. also gleich schön gegliedert.
 - Behaupte nie, etwas gespeichert oder nachgeschaut zu haben.
 """
 
@@ -243,6 +247,11 @@ HELP_TEXT = """**Modi** – oben im Chat umschalten:
 - **📎** Dateien anhängen (Markdown, Word, PDF, Text, E-Book, Audio) – oder einfach ins Fenster ziehen
 - **🌐** Websuche erzwingen: Connor sucht bei jeder Nachricht zuerst im Internet
 - **🎤** Diktieren: klicken, sprechen, nochmals klicken
+
+**Dateien erstellen**
+- Sag einfach «Mach mir einen Charakterbogen für Lira als Word» oder «Schreib ein Skript für Szene 3 als Word» – \
+Connor legt die Datei in deinem Ordner *Dokumente\\Connor* ab.
+- Jede Antwort hat oben rechts **💾 Word** – damit speicherst du sie direkt als Word-Datei.
 
 **Befehle**
 - `/merke Titel: Inhalt` – ich merke mir etwas, z. B. `/merke Lira: Elfe, 19, hat Angst vor Wasser`

@@ -4,11 +4,11 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
-                               QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
+                               QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+                               QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget)
 
-from .. import system, voice
+from .. import files, system, voice
 from ..llm import RECOMMENDED_MODEL, OllamaClient, OllamaError
 from ..paths import data_dir, models_dir
 from ..prompts import MODES
@@ -191,6 +191,17 @@ class SettingsDialog(QDialog):
         open_button.clicked.connect(lambda: system.open_folder(data_dir()))
         folder_row.addWidget(open_button)
         system_form.addRow("Deine Daten", folder_row)
+        files_row = QHBoxLayout()
+        self.files_dir = QLineEdit(settings.files_dir)
+        self.files_dir.setPlaceholderText(str(files.default_folder()))
+        files_row.addWidget(self.files_dir, 1)
+        choose_files = QPushButton("Ändern …")
+        choose_files.clicked.connect(self._choose_files_dir)
+        files_row.addWidget(choose_files)
+        open_files = QPushButton("Öffnen")
+        open_files.clicked.connect(lambda: system.open_folder(files.output_folder(self.files_dir.text())))
+        files_row.addWidget(open_files)
+        system_form.addRow("Erstellte Dateien", files_row)
         system_form.addRow("", _hint("Hier liegen Chats, Gedächtnis, Geschichten und Erinnerungen (connor.db). "
                                      "Für ein Backup einfach diesen Ordner kopieren."))
         column.addWidget(system_box)
@@ -231,6 +242,12 @@ class SettingsDialog(QDialog):
             self.connection_label.setText(f"⚠️ Verbunden, aber noch kein Modell installiert. "
                                           f"Im Terminal: ollama pull {RECOMMENDED_MODEL}")
 
+    def _choose_files_dir(self) -> None:
+        start = self.files_dir.text().strip() or str(files.default_folder())
+        folder = QFileDialog.getExistingDirectory(self, "Ordner für Dateien von Connor", start)
+        if folder:
+            self.files_dir.setText(folder)
+
     def apply(self) -> None:
         s = self.settings
         s.ollama_url = self.url.text().strip() or "http://localhost:11434"
@@ -253,6 +270,7 @@ class SettingsDialog(QDialog):
         s.voice_language = self.voice_language.currentData()
         s.voice_device = self.voice_device.currentData()
         s.voice_autosend = self.voice_autosend.isChecked()
+        s.files_dir = self.files_dir.text().strip()
         s.minimize_to_tray = self.tray.isChecked()
         if system.autostart_supported() and self.autostart.isChecked() != system.autostart_enabled():
             try:

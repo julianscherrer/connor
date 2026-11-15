@@ -1,15 +1,21 @@
 """Chat building blocks: message bubbles, the scrolling chat view and the input box."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+import html
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QGuiApplication, QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QVBoxLayout, QWidget)
 
+from ..files import FILE_EVENT
 from ..llm import strip_think, strip_tool_markup
 
 
 class MessageBubble(QFrame):
+    save_requested = Signal(str)
+
     def __init__(self, role: str, text: str = "", stamp: str = "", parent: QWidget | None = None):
         super().__init__(parent)
         self.role = role
@@ -29,6 +35,13 @@ class MessageBubble(QFrame):
         self.stamp.setObjectName("small")
         header.addWidget(self.stamp)
         header.addStretch(1)
+        if role == "assistant":
+            self.save_button = QPushButton("💾 Word")
+            self.save_button.setObjectName("flat")
+            self.save_button.setToolTip("Diese Antwort als Word-Datei speichern (in Dokumente\\Connor)")
+            self.save_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.save_button.clicked.connect(lambda: self.save_requested.emit(self.visible_text()))
+            header.addWidget(self.save_button)
         self.copy_button = QPushButton("Kopieren")
         self.copy_button.setObjectName("flat")
         self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -68,6 +81,8 @@ class MessageBubble(QFrame):
 class ChatView(QScrollArea):
     """Scrollable list of bubbles. Sticks to the bottom while Connor is typing,
     unless you scrolled up to read something."""
+
+    save_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -181,6 +196,7 @@ class ChatView(QScrollArea):
             self._user_bubbles.append(bubble)
             self._fit_user_bubble(bubble)
         else:
+            bubble.save_requested.connect(self.save_requested)
             layout.addWidget(bubble, 1)
             layout.addSpacing(48)
         self._insert(row)
@@ -188,11 +204,23 @@ class ChatView(QScrollArea):
 
     def add_event(self, text: str, error: bool = False) -> QLabel:
         self._remove_welcome()
-        label = QLabel(text)
+        label = QLabel()
         label.setObjectName("errorLabel" if error else "eventLabel")
         label.setWordWrap(True)
-        label.setTextFormat(Qt.TextFormat.PlainText)
-        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        if text.startswith(FILE_EVENT):
+            path = Path(text[len(FILE_EVENT):].strip())
+            file_url = QUrl.fromLocalFile(str(path)).toString()
+            folder_url = QUrl.fromLocalFile(str(path.parent)).toString()
+            label.setTextFormat(Qt.TextFormat.RichText)
+            label.setText(f"📄 Datei erstellt: <a href='{file_url}'>{html.escape(path.name)}</a>"
+                          f" &nbsp;·&nbsp; <a href='{folder_url}'>Ordner öffnen</a>")
+            label.setToolTip(str(path))
+            label.setOpenExternalLinks(True)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        else:
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setText(text)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter if not error else Qt.AlignmentFlag.AlignLeft)
         self._insert(label)
         return label
