@@ -15,16 +15,24 @@ log = logging.getLogger(__name__)
 class Settings:
     ollama_url: str = "http://localhost:11434"
     model: str = ""
-    temperature: float = 0.8
+    temperature: float = 0.8  # Schreibpartner
+    chat_temperature: float = 0.5  # Allrounder
     context_size: int = 8192
     thinking: str = "off"  # auto | off | on
+    keep_alive: str = "30m"
     use_tools: bool = True
+    default_mode: str = "writer"  # writer | assistant
     user_name: str = ""
     extra_instructions: str = ""
     web_enabled: bool = True
     web_confirm: bool = False
-    search_provider: str = "duckduckgo"  # duckduckgo | searxng
+    web_read_pages: bool = True
+    search_provider: str = "auto"  # auto | ddg | bing | searxng
     searxng_url: str = "http://localhost:8888"
+    voice_model: str = "small"
+    voice_language: str = "de"
+    voice_device: str = "auto"  # auto | cpu | cuda
+    voice_autosend: bool = False
     minimize_to_tray: bool = True
     tray_hint_shown: bool = False
     window_geometry: str = ""
@@ -60,6 +68,11 @@ class Settings:
                     values[f.name] = float(value)
             elif isinstance(value, str):
                 values[f.name] = value
+        # Version 1 only knew "duckduckgo" (with Wikipedia as fallback) – that is "auto" now.
+        if values.get("search_provider") == "duckduckgo":
+            values["search_provider"] = "auto"
+        if values.get("default_mode") not in (None, "writer", "assistant"):
+            values.pop("default_mode")
         return cls(**values)
 
     def save(self, path: Path | None = None) -> None:

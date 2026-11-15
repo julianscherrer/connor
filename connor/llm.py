@@ -57,6 +57,8 @@ def classify_error(message: str, model: str) -> OllamaError:
 
 
 _THINK_BLOCK = re.compile(r"<think>.*?(?:</think>|$)", re.S)
+_TOOL_BLOCK = re.compile(r"<tool_call>(.*?)(?:</tool_call>|$)", re.S)
+_FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.S)
 
 
 def strip_think(text: str) -> str:
@@ -66,6 +68,55 @@ def strip_think(text: str) -> str:
     if "</think>" in text:
         return text.rsplit("</think>", 1)[1].lstrip()
     return text
+
+
+def _json_tool_call(raw: str) -> dict | None:
+    raw = raw.strip()
+    fenced = _FENCE.match(raw)
+    if fenced:
+        raw = fenced.group(1).strip()
+    if not (raw.startswith("{") and raw.endswith("}")):
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if isinstance(data.get("function"), dict):
+        data = data["function"]
+    name = data.get("name")
+    arguments = data.get("arguments", data.get("parameters", {}))
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except ValueError:
+            return None
+    if not isinstance(name, str) or not isinstance(arguments, dict):
+        return None
+    return {"function": {"name": name, "arguments": arguments}}
+
+
+def parse_text_tool_calls(text: str, known: set[str]) -> list[dict]:
+    """Some models write their tool call as text instead of really calling the tool."""
+    calls = [_json_tool_call(block) for block in _TOOL_BLOCK.findall(text)]
+    if not calls:
+        calls = [_json_tool_call(strip_think(text))]
+    return [c for c in calls if c and c["function"]["name"] in known]
+
+
+def looks_like_tool_json(text: str) -> bool:
+    stripped = text.lstrip()
+    if stripped.startswith("```"):
+        stripped = stripped.lstrip("`").removeprefix("json").lstrip()
+    return stripped.startswith("{") and '"name"' in stripped[:200] and (
+        '"arguments"' in stripped or '"parameters"' in stripped)
+
+
+def strip_tool_markup(text: str) -> str:
+    if "<tool_call>" in text:
+        text = _TOOL_BLOCK.sub("", text)
+    return "" if looks_like_tool_json(text) else text
 
 
 class CancelToken:
@@ -140,7 +191,7 @@ class OllamaClient:
         return [str(c) for c in caps] if isinstance(caps, list) else None
 
     def chat_stream(self, model: str, messages: list[dict], *, tools: list[dict] | None = None,
-                    options: dict | None = None, think: bool | None = None,
+                    options: dict | None = None, think: bool | None = None, keep_alive: str | None = None,
                     token: CancelToken | None = None) -> Iterator[tuple[str, object]]:
         """Yields ("content", str), ("thinking", str) and ("tool_call", dict)."""
         payload: dict = {"model": model, "messages": messages, "stream": True}
@@ -150,6 +201,8 @@ class OllamaClient:
             payload["options"] = options
         if think is not None:
             payload["think"] = think
+        if keep_alive:
+            payload["keep_alive"] = keep_alive
         try:
             resp = self.session.post(self._url("/api/chat"), json=payload, stream=True, timeout=(10, 600))
         except requests.RequestException as exc:

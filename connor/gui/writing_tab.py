@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QTextCursor
@@ -10,11 +12,14 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit
                                QWidget)
 
 from ..database import Database
+from ..documents import ImportResult, collect_files, import_paths, normalize, read_document
 from ..engine import ConnorEngine, Reply
 from ..llm import strip_think
 from ..prompts import build_writing_prompt
 from ..settings import Settings
+from ..voice import Transcriber
 from .common import SUBTITLE_ROLE, TwoLineDelegate, Worker, pretty_stamp
+from .voice_drop import MicButton
 
 log = logging.getLogger(__name__)
 
@@ -40,16 +45,19 @@ def continuation_separator(story: str) -> str:
 class WritingTab(QWidget):
     data_changed = Signal(object)
 
-    def __init__(self, db: Database, engine: ConnorEngine, settings: Settings, parent: QWidget | None = None):
+    def __init__(self, db: Database, engine: ConnorEngine, settings: Settings,
+                 transcriber: Callable[[], Transcriber], parent: QWidget | None = None):
         super().__init__(parent)
         self.db = db
         self.engine = engine
         self.settings = settings
+        self.transcriber = transcriber
         self.story_id: int | None = None
         self._loading = False
         self._dirty = False
         self._active: Worker | None = None
         self._workers: set[Worker] = set()
+        self._import_worker: Worker | None = None
         self._suggestion = ""
         self._action = ""
 
@@ -174,6 +182,13 @@ class WritingTab(QWidget):
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
+        self.mic_button = MicButton(self.transcriber, "🎤  Diktieren")
+        self.mic_button.setToolTip("Diktieren: klicken, sprechen, nochmals klicken – der Text landet an der "
+                                   "Cursor-Position.\nDie Spracherkennung läuft lokal auf deinem PC.")
+        self.mic_button.transcribed.connect(self._on_dictated)
+        self.mic_button.failed.connect(lambda message: QMessageBox.information(self, "Diktieren", message))
+        self.mic_button.status.connect(lambda text: self.count_label.setText(text) if text else self._update_count())
+        actions.addWidget(self.mic_button)
         self.hint_edit = QLineEdit()
         self.hint_edit.setPlaceholderText("Wunsch an Connor (optional) – z. B. «mehr Spannung» oder «Dialog zwischen Lira und Tom»")
         actions.addWidget(self.hint_edit, 1)
@@ -244,6 +259,8 @@ class WritingTab(QWidget):
         self.title_edit.setText(story["title"])
         self.project_box.setCurrentText(story["project"])
         self.editor.setPlainText(story["content"])
+        self.editor.moveCursor(QTextCursor.MoveOperation.End)
+        self.editor.ensureCursorVisible()
         self._loading = False
         self._dirty = False
         self._update_count(saved=True)
@@ -333,14 +350,14 @@ class WritingTab(QWidget):
         hint = self.hint_edit.text()
         length = self.length_box.currentData()
         max_chars = max(3000, (self.settings.context_size - 3000) * 3 - 6000)
-        prompt = build_writing_prompt(action=action, title=title, text=text, hint=hint, length=length,
-                                      max_chars=max_chars)
         engine = self.engine
-        query = f"{title} {project} {text[-1500:]}"
+        query = f"{title} {project} {hint} {text[-1500:]}"
 
         def job(worker: Worker) -> Reply:
-            system = engine.writing_system_prompt(project, query)
-            return engine.generate(system, prompt, on_chunk=worker.emit_chunk, token=worker.token)
+            prompt = build_writing_prompt(action=action, title=title, text=text, hint=hint, length=length,
+                                          max_chars=max_chars, context=engine.writing_context(project, query))
+            return engine.generate(engine.writing_system_prompt(), prompt, on_chunk=worker.emit_chunk,
+                                   token=worker.token)
 
         worker = Worker(job)
         worker.chunk.connect(self._on_chunk)
@@ -438,5 +455,95 @@ class WritingTab(QWidget):
 
     def shutdown(self) -> None:
         self.save_current()
-        for worker in list(self._workers):
-            worker.stop()
+        self.mic_button.cancel()
+        for worker in [*self._workers, self._import_worker]:
+            if worker is not None:
+                worker.stop()
+
+    # ---------------------------------------------------- dictation & files
+    def _on_dictated(self, text: str) -> None:
+        cursor = self.editor.textCursor()
+        before = self.editor.toPlainText()[: cursor.position()]
+        if before and not before.endswith((" ", "\n")):
+            text = " " + text
+        cursor.insertText(text)
+        self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
+
+    def handle_drop(self, paths: list[str]) -> None:
+        if self._import_worker is not None:
+            QMessageBox.information(self, "Moment", "Ich lese gerade noch andere Dateien – gleich fertig.")
+            return
+        files, _skipped = collect_files(paths)
+        if not files:
+            QMessageBox.information(self, "Nichts gefunden", "Diese Dateien kann ich nicht lesen. Unterstützt sind "
+                                    "z. B. Markdown, Text, Word, PDF, E-Books und Audio.")
+            return
+        project = self.project()
+        if len(files) == 1:
+            box = QMessageBox(self)
+            box.setWindowTitle("Datei verwenden")
+            box.setText(f"Was soll ich mit «{files[0][1]}» machen?")
+            box.setInformativeText("Als Geschichte öffnen: Der Text landet im Editor, du kannst weiterschreiben.\n"
+                                   "Als Wissen: Connor kennt den Inhalt beim Schreiben (z. B. Weltenbau-Notizen).")
+            story_button = box.addButton("📖  Als Geschichte öffnen", QMessageBox.ButtonRole.AcceptRole)
+            knowledge_button = box.addButton("📚  Als Wissen für Connor", QMessageBox.ButtonRole.ActionRole)
+            box.addButton("Abbrechen", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is story_button:
+                self._open_as_story(files[0][0])
+            elif box.clickedButton() is knowledge_button:
+                self._import_knowledge(paths, project)
+            return
+        where = f"im Projekt «{project}»" if project else "ohne Projekt"
+        answer = QMessageBox.question(self, "Als Wissen speichern?",
+                                      f"{len(files)} Dateien als Wissen für Connor speichern ({where})?\n\n"
+                                      "Connor nutzt sie dann beim Schreiben, z. B. Weltenbau- oder Charakter-Notizen.")
+        if answer == QMessageBox.StandardButton.Yes:
+            self._import_knowledge(paths, project)
+
+    def _run_import(self, job, on_done) -> None:
+        worker = Worker(job)
+        worker.event.connect(lambda _w, text: self.count_label.setText(text))
+        worker.finished.connect(lambda w, result: self._import_finished(w, result, on_done))
+        worker.failed.connect(lambda w, message: self._import_finished(w, None, None, message))
+        self._import_worker = worker
+        self.count_label.setText("📥 Lese …")
+        worker.start()
+
+    def _import_finished(self, worker: Worker, result, on_done, error: str = "") -> None:
+        if worker is not self._import_worker:
+            return
+        self._import_worker = None
+        self._update_count()
+        if error:
+            QMessageBox.warning(self, "Hat nicht geklappt", error)
+        elif on_done is not None and result is not None:
+            on_done(result)
+
+    def _open_as_story(self, path: Path) -> None:
+        transcriber = self.transcriber()
+
+        def job(worker: Worker) -> str:
+            return normalize(read_document(path, transcribe=transcriber.file_transcriber(), progress=worker.emit_event))
+
+        def done(text: str) -> None:
+            self.save_current()
+            story_id = self.db.create_story(path.stem, self.project(), text)
+            self.load_story(story_id)
+
+        self._run_import(job, done)
+
+    def _import_knowledge(self, paths: list[str], project: str) -> None:
+        db, transcriber = self.db, self.transcriber()
+
+        def job(worker: Worker) -> ImportResult:
+            return import_paths(db, paths, project=project, transcribe=transcriber.file_transcriber(),
+                                progress=worker.emit_event, should_stop=lambda: worker.cancelled)
+
+        def done(result: ImportResult) -> None:
+            QMessageBox.information(self, "Dateien gelesen", result.summary() +
+                                    "\n\nDu findest sie im Tab «📚 Dokumente».")
+            self.data_changed.emit({"documents", "projects"})
+
+        self._run_import(job, done)

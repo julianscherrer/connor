@@ -79,7 +79,9 @@ def test_search_falls_back_to_next_engine(monkeypatch):
     def broken(_query, _max):
         raise WebError("kaputt")
 
+    monkeypatch.setattr(websearch, "_blocked_until", {})
     monkeypatch.setattr(websearch, "_search_ddg_html", broken)
+    monkeypatch.setattr(websearch, "_search_bing", lambda q, m: [])
     monkeypatch.setattr(websearch, "_search_ddg_lite", lambda q, m: [])
     monkeypatch.setattr(websearch, "_search_wikipedia",
                         lambda q, m: [websearch.SearchResult("Wiki", "https://de.wikipedia.org/wiki/X")])
@@ -87,7 +89,88 @@ def test_search_falls_back_to_next_engine(monkeypatch):
 
     monkeypatch.setattr(websearch, "_search_wikipedia", broken)
     monkeypatch.setattr(websearch, "_search_ddg_lite", broken)
+    monkeypatch.setattr(websearch, "_search_bing", broken)
     with pytest.raises(WebError):
         websearch.search("x")
     with pytest.raises(WebError):
         websearch.search("   ")
+
+
+def test_blocked_engine_is_paused(monkeypatch):
+    calls = []
+
+    def blocked(_query, _max):
+        calls.append("ddg")
+        raise websearch.EngineBlocked("Status 202")
+
+    def bing(_query, _max):
+        calls.append("bing")
+        return [websearch.SearchResult("Treffer", "https://example.org")]
+
+    monkeypatch.setattr(websearch, "_blocked_until", {})
+    monkeypatch.setattr(websearch, "_search_ddg_html", blocked)
+    monkeypatch.setattr(websearch, "_search_bing", bing)
+    assert websearch.search("x")[0].title == "Treffer"
+    assert websearch.search("y")[0].title == "Treffer"
+    assert calls == ["ddg", "bing", "bing"]
+    assert websearch.search("z", provider="bing")[0].url == "https://example.org"
+
+
+BING_PAGE = """
+<ol id="b_results">
+<li class="b_algo" data-id iid=SERP.1><link rel="stylesheet" href="x.css"/>
+  <div class="b_tpcn"><a class="tilk" href="https://www.bing.com/ck/a?!&amp;&amp;p=1&amp;u=a1aHR0cHM6Ly9kZS53aWtpcGVkaWEub3JnL3dpa2kvRnUlQzMlOUZiYWxs&amp;ntb=1">
+  <div class="tptt">wikipedia.org</div><cite>https://de.wikipedia.org › wiki</cite></a></div>
+  <h2><a target="_blank" href="https://www.bing.com/ck/a?!&amp;&amp;p=1&amp;u=a1aHR0cHM6Ly9kZS53aWtpcGVkaWEub3JnL3dpa2kvRnUlQzMlOUZiYWxs&amp;ntb=1">Fu&#223;ball – Wikipedia</a></h2>
+  <div class="b_caption"><p class="b_lineclamp2">Fu&#223;ball ist eine <strong>Ballsportart</strong> …</p></div>
+</li>
+<li class="b_ad"><h2><a href="https://ads.example">Werbung</a></h2></li>
+<li class="b_algo"><h2><a href="https://example.org/direkt">Direkter Link</a></h2>
+  <div class="b_caption"><p>Ohne Umweg.</p><p>Zweiter Absatz</p></div></li>
+</ol>
+"""
+
+
+def test_parse_bing():
+    results = websearch.parse_bing_results(BING_PAGE)
+    assert [(r.title, r.url, r.snippet) for r in results] == [
+        ("Fußball – Wikipedia", "https://de.wikipedia.org/wiki/Fu%C3%9Fball", "Fußball ist eine Ballsportart …"),
+        ("Direkter Link", "https://example.org/direkt", "Ohne Umweg."),
+    ]
+    assert websearch.resolve_bing_url("https://www.bing.com/ck/a?u=zzz") is None
+    assert websearch.resolve_bing_url("https://www.bing.com/ck/a?u=a1!!!") is None
+
+
+def test_best_excerpt_prefers_matching_lines():
+    page = "\n".join([
+        "Cookies akzeptieren und weiter zum Inhalt der Seite bitte",
+        "Navigation: Startseite, Sport, Wetter, Kultur und noch viel mehr",
+        "Im Finale der Fussball-WM 2026 gewann Spanien gegen Brasilien mit 2:1.",
+        "Impressum und Datenschutz und Kontakt und so weiter und so fort",
+    ])
+    excerpt = websearch.best_excerpt(page, "Wer hat das Finale der WM 2026 gewonnen?", max_chars=120)
+    assert excerpt.startswith("Im Finale der Fussball-WM 2026 gewann Spanien")
+    assert "Cookies" not in excerpt
+    assert websearch.best_excerpt("kurz", "egal") == "kurz"
+
+
+def test_format_results():
+    results = [websearch.SearchResult("A", "https://a.ch", "Snippet A")]
+    text = websearch.format_results("frage", results, [(results[0], "Auszug A")])
+    assert "1. A\n   https://a.ch\n   Snippet A" in text and "--- A (https://a.ch) ---\nAuszug A" in text
+    assert websearch.format_results("frage", [], []) == "Keine Treffer für «frage»."
+
+
+def test_read_top_pages_skips_broken_and_video_sites(monkeypatch):
+    def fetch(url, max_chars=0):
+        if "kaputt" in url:
+            raise WebError("404")
+        return url, "Titel", "Eine ausführliche Zeile über das Thema Langbogen und seine Geschichte."
+
+    monkeypatch.setattr(websearch, "fetch_page", fetch)
+    results = [websearch.SearchResult("Video", "https://www.youtube.com/watch?v=1"),
+               websearch.SearchResult("Kaputt", "https://kaputt.example"),
+               websearch.SearchResult("Gut", "https://gut.example"),
+               websearch.SearchResult("Auch gut", "https://auch.example")]
+    pages = websearch.read_top_pages(results, "Langbogen", count=2)
+    assert [result.title for result, _excerpt in pages] == ["Gut", "Auch gut"]

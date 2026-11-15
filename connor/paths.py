@@ -30,3 +30,11 @@ def export_dir() -> Path:
     path = data_dir() / "exports"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def models_dir() -> Path:
+    """Downloaded speech models. Not part of your data backup – they can be downloaded again."""
+    custom = os.environ.get("CONNOR_MODELS_DIR")
+    path = Path(custom) if custom else APP_DIR / "models"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

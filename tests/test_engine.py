@@ -29,9 +29,13 @@ def test_plain_answer_is_streamed(db, fake):
     request = fake.requests[0]
     system = request["messages"][0]
     assert system["role"] == "system" and "Connor" in system["content"] and "save_memory" in system["content"]
-    assert request["messages"][-1] == {"role": "user", "content": "Hoi Connor!"}
+    last = request["messages"][-1]
+    assert last["role"] == "user" and last["content"].startswith("<kontext>")
+    assert last["content"].endswith("\n\nHoi Connor!")
     assert request["options"]["num_ctx"] == 8192
-    assert {t["function"]["name"] for t in request["tools"]} >= {"save_memory", "create_reminder", "web_search"}
+    assert request["keep_alive"] == "30m"
+    assert {t["function"]["name"] for t in request["tools"]} >= {"save_memory", "create_reminder", "web_search",
+                                                                 "search_documents"}
     assert request["think"] is False
 
 
@@ -71,9 +75,15 @@ def test_relevant_memories_are_injected(db, fake):
     db.add_message(chat, "user", "Was weisst du über Lira?")
     engine.respond(chat)
     system = fake.requests[0]["messages"][0]["content"]
-    assert "Lira: Elfe, hat Angst vor Wasser" in system
-    assert "Kaffee" in system and "Julian" in system and "Drachenreiter" in system
-    assert "Zorg" not in system
+    context = fake.requests[0]["messages"][-1]["content"]
+    assert "Lira: Elfe, hat Angst vor Wasser" in context and "Aktuelles Projekt: Drachenreiter" in context
+    assert "Kaffee" in system and "Julian" in system
+    assert "Zorg" not in system + context
+
+    db.add_message(chat, "assistant", "Lira ist eine Elfe.")
+    db.add_message(chat, "user", "Und sonst?")
+    engine.respond(chat)
+    assert fake.requests[1]["messages"][0]["content"] == system, "system prompt must stay stable for Ollama's cache"
 
 
 def test_model_without_tools_falls_back(db, fake):
@@ -163,7 +173,7 @@ def test_history_is_trimmed_to_context(db, fake):
     db.add_message(chat, "user", "Letzte Frage")
     engine.respond(chat)
     messages = fake.requests[0]["messages"]
-    assert messages[-1]["content"] == "Letzte Frage"
+    assert messages[-1]["content"].endswith("Letzte Frage")
     assert 2 < len(messages) < 20
 
 
@@ -171,12 +181,12 @@ def test_generate_for_writing(db, fake):
     engine, _ = make_engine(db, fake)
     db.add_memory("Lira", "Elfe", "charakter", "Drachenreiter", "kanon")
     fake.script.append({"content": "Lira sprang ins Wasser – trotz allem."})
-    system = engine.writing_system_prompt("Drachenreiter", "Lira am See")
-    reply = engine.generate(system, "Schreib weiter")
+    context = engine.writing_context("Drachenreiter", "Lira am See")
+    reply = engine.generate(engine.writing_system_prompt(), f"{context}\n\nSchreib weiter")
     assert reply.text == "Lira sprang ins Wasser – trotz allem."
     sent = fake.requests[0]
     assert "tools" not in sent and "Schreibmodus" in sent["messages"][0]["content"]
-    assert "Lira: Elfe" in sent["messages"][0]["content"]
+    assert "Lira: Elfe" in sent["messages"][1]["content"]
 
 
 def test_web_tools(db, monkeypatch):

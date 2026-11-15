@@ -14,6 +14,8 @@ log = logging.getLogger(__name__)
 MEMORY_CATEGORIES = ("charakter", "welt", "ort", "plot", "idee", "story", "vorliebe", "notiz")
 MEMORY_STATUSES = ("kanon", "entwurf", "offen", "verworfen")
 REPEAT_OPTIONS = ("none", "daily", "weekly")
+CHAT_MODES = ("writer", "assistant")
+CHUNK_SIZE = 1200
 
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -60,6 +62,43 @@ def keywords(text: str, limit: int = 12) -> list[str]:
     return words
 
 
+def chunk_text(text: str, size: int = CHUNK_SIZE) -> list[str]:
+    """Splits a document into pieces of about ``size`` characters along paragraph borders.
+    Pieces from inside a Markdown section remember the section title."""
+    chunks: list[str] = []
+    current = ""
+    heading = ""
+
+    def flush() -> None:
+        nonlocal current
+        if current.strip():
+            chunks.append(current.strip())
+        current = ""
+
+    for para in (p.strip() for p in re.split(r"\n\s*\n", text)):
+        if not para:
+            continue
+        if para.startswith("#"):
+            heading = para.splitlines()[0].lstrip("#").strip()
+        while len(para) > size:
+            cut = para.rfind(". ", 0, size)
+            if cut < size // 2:
+                cut = para.rfind(" ", 0, size)
+            if cut <= 0:
+                cut = size
+            flush()
+            piece = para[: cut + 1].strip()
+            chunks.append(f"({heading})\n{piece}" if heading and not piece.startswith("#") else piece)
+            para = para[cut + 1:].strip()
+        if current and len(current) + len(para) + 2 > size:
+            flush()
+        if not current and heading and not para.startswith("#"):
+            current = f"({heading})\n"
+        current = f"{current}\n\n{para}" if current and not current.endswith("\n") else current + para
+    flush()
+    return chunks
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +142,29 @@ CREATE TABLE IF NOT EXISTS stories (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    project TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(path);
+CREATE TABLE IF NOT EXISTS doc_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    content TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON doc_chunks(doc_id, position);
+CREATE TABLE IF NOT EXISTS chat_documents (
+    chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    doc_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    PRIMARY KEY (chat_id, doc_id)
+);
 """
 
 FTS_SCHEMA = """
@@ -139,6 +201,20 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
     INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks_fts USING fts5(
+    content, content='doc_chunks', content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER IF NOT EXISTS doc_chunks_ai AFTER INSERT ON doc_chunks BEGIN
+    INSERT INTO doc_chunks_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS doc_chunks_ad AFTER DELETE ON doc_chunks BEGIN
+    INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS doc_chunks_au AFTER UPDATE ON doc_chunks BEGIN
+    INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, content) VALUES ('delete', old.id, old.content);
+    INSERT INTO doc_chunks_fts(rowid, content) VALUES (new.id, new.content);
+END;
 """
 
 
@@ -155,6 +231,7 @@ class Database:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            self._migrate(conn)
             self.fts = self._init_fts(conn)
 
     @contextmanager
@@ -169,28 +246,40 @@ class Database:
             conn.close()
 
     @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Brings databases from older Connor versions up to date."""
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(chats)")}
+        if "mode" not in columns:
+            conn.execute("ALTER TABLE chats ADD COLUMN mode TEXT NOT NULL DEFAULT 'writer'")
+
+    @staticmethod
     def _init_fts(conn: sqlite3.Connection) -> bool:
         try:
             existing = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             conn.executescript(FTS_SCHEMA)
-            if "memories_fts" not in existing:
-                conn.execute("INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')")
-            if "messages_fts" not in existing:
-                conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
+            for table in ("memories_fts", "messages_fts", "doc_chunks_fts"):
+                if table not in existing:
+                    conn.execute(f"INSERT INTO {table}({table}) VALUES ('rebuild')")
             return True
         except sqlite3.OperationalError as exc:
             log.warning("Volltextsuche (FTS5) nicht verfügbar, nutze einfache Suche: %s", exc)
             return False
 
     # ------------------------------------------------------------------ chats
-    def create_chat(self, title: str = "Neuer Chat", project: str = "") -> int:
+    def create_chat(self, title: str = "Neuer Chat", project: str = "", mode: str = "writer") -> int:
         now = now_str()
+        mode = mode if mode in CHAT_MODES else "writer"
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO chats(title, project, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (title, project, now, now),
+                "INSERT INTO chats(title, project, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (title, project, mode, now, now),
             )
             return int(cur.lastrowid)
+
+    def set_chat_mode(self, chat_id: int, mode: str) -> None:
+        if mode in CHAT_MODES:
+            with self._connect() as conn:
+                conn.execute("UPDATE chats SET mode = ? WHERE id = ?", (mode, chat_id))
 
     def get_chat(self, chat_id: int) -> dict | None:
         with self._connect() as conn:
@@ -225,6 +314,7 @@ class Database:
     def delete_chat(self, chat_id: int) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+            conn.execute("DELETE FROM chat_documents WHERE chat_id = ?", (chat_id,))
             conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
 
     def add_message(self, chat_id: int, role: str, content: str) -> int:
@@ -411,7 +501,8 @@ class Database:
             rows = conn.execute(
                 """SELECT project FROM memories WHERE project <> ''
                    UNION SELECT project FROM stories WHERE project <> ''
-                   UNION SELECT project FROM chats WHERE project <> ''"""
+                   UNION SELECT project FROM chats WHERE project <> ''
+                   UNION SELECT project FROM documents WHERE project <> ''"""
             ).fetchall()
         return sorted({r[0] for r in rows}, key=str.casefold)
 
@@ -521,3 +612,153 @@ class Database:
     def delete_story(self, story_id: int) -> bool:
         with self._connect() as conn:
             return conn.execute("DELETE FROM stories WHERE id = ?", (story_id,)).rowcount > 0
+
+    # -------------------------------------------------------------- documents
+    def add_document(self, name: str, content: str, *, path: str = "", kind: str = "",
+                     project: str = "") -> tuple[int, bool]:
+        """Stores a document and its search chunks. Importing the same file again replaces the
+        old version. Returns (id, created)."""
+        now = now_str()
+        chunks = chunk_text(content)
+        with self._connect() as conn:
+            row = conn.execute("SELECT id, project FROM documents WHERE path = ? AND path <> ''",
+                               (path,)).fetchone() if path else None
+            if row is None:
+                cur = conn.execute(
+                    """INSERT INTO documents(name, path, kind, project, content, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (name, path, kind, project, content, now, now),
+                )
+                doc_id, created = int(cur.lastrowid), True
+            else:
+                doc_id, created = int(row["id"]), False
+                conn.execute(
+                    "UPDATE documents SET name = ?, kind = ?, project = ?, content = ?, updated_at = ? WHERE id = ?",
+                    (name, kind, project or row["project"], content, now, doc_id),
+                )
+                conn.execute("DELETE FROM doc_chunks WHERE doc_id = ?", (doc_id,))
+            conn.executemany(
+                "INSERT INTO doc_chunks(doc_id, position, content) VALUES (?, ?, ?)",
+                [(doc_id, position, chunk) for position, chunk in enumerate(chunks)],
+            )
+        return doc_id, created
+
+    def get_document(self, doc_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT *, length(content) AS chars FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_documents(self, search: str = "", project: str | None = None) -> list[dict]:
+        clauses, params = [], []
+        if project is not None:
+            clauses.append("project = ?")
+            params.append(project)
+        if search.strip():
+            clauses.append("(name LIKE ? OR project LIKE ? OR content LIKE ?)")
+            params += [f"%{search.strip()}%"] * 3
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT id, name, path, kind, project, created_at, updated_at, length(content) AS chars
+                    FROM documents {where} ORDER BY updated_at DESC, id DESC""",
+                params,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_document(self, doc_id: int, name: str | None = None, project: str | None = None) -> bool:
+        values = {k: v for k, v in (("name", name), ("project", project)) if v is not None}
+        if not values:
+            return self.get_document(doc_id) is not None
+        values["updated_at"] = now_str()
+        columns = ", ".join(f"{key} = ?" for key in values)
+        with self._connect() as conn:
+            cur = conn.execute(f"UPDATE documents SET {columns} WHERE id = ?", (*values.values(), doc_id))
+            return cur.rowcount > 0
+
+    def delete_document(self, doc_id: int) -> bool:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM doc_chunks WHERE doc_id = ?", (doc_id,))
+            conn.execute("DELETE FROM chat_documents WHERE doc_id = ?", (doc_id,))
+            return conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,)).rowcount > 0
+
+    def document_chunks(self, doc_id: int, limit: int = 1000) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT c.id, c.doc_id, c.position, c.content, d.name, d.project
+                   FROM doc_chunks c JOIN documents d ON d.id = c.doc_id
+                   WHERE c.doc_id = ? ORDER BY c.position LIMIT ?""",
+                (doc_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def search_chunks(self, query: str, *, doc_ids: list[int] | None = None, exclude: list[int] | None = None,
+                      project: str = "", limit: int = 6) -> list[dict]:
+        """Finds the document passages that fit best. Each result has ``hits``: how many of the
+        search words it contains."""
+        words = keywords(query)
+        if not words or doc_ids == []:
+            return []
+        filters, params = [], []
+        if doc_ids:
+            filters.append(f"c.doc_id IN ({','.join('?' * len(doc_ids))})")
+            params += doc_ids
+        if exclude:
+            filters.append(f"c.doc_id NOT IN ({','.join('?' * len(exclude))})")
+            params += exclude
+        extra = "".join(f" AND {f}" for f in filters)
+        with self._connect() as conn:
+            if self.fts:
+                rows = conn.execute(
+                    f"""SELECT c.id, c.doc_id, c.position, c.content, d.name, d.project,
+                               bm25(doc_chunks_fts) AS score
+                        FROM doc_chunks_fts
+                        JOIN doc_chunks c ON c.id = doc_chunks_fts.rowid
+                        JOIN documents d ON d.id = c.doc_id
+                        WHERE doc_chunks_fts MATCH ?{extra}
+                        ORDER BY score LIMIT 60""",
+                    (_fts_match(words), *params),
+                ).fetchall()
+            else:
+                like = " OR ".join("c.content LIKE ?" for _ in words)
+                rows = conn.execute(
+                    f"""SELECT c.id, c.doc_id, c.position, c.content, d.name, d.project, 0 AS score
+                        FROM doc_chunks c JOIN documents d ON d.id = c.doc_id
+                        WHERE ({like}){extra} LIMIT 300""",
+                    (*[f"%{w}%" for w in words], *params),
+                ).fetchall()
+        results = []
+        for row in rows:
+            chunk = dict(row)
+            text = chunk["content"].lower()
+            chunk["hits"] = sum(1 for w in words if w in text)
+            if not self.fts:
+                chunk["score"] = -chunk["hits"]
+            results.append(chunk)
+        current = project.strip().casefold()
+
+        def priority(chunk: dict) -> int:
+            own = chunk["project"].strip().casefold()
+            if current and own == current:
+                return 0
+            return 1 if not own else 2
+
+        results.sort(key=lambda c: (priority(c), -c["hits"], c["score"]))
+        return results[:limit]
+
+    def attach_document(self, chat_id: int, doc_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("INSERT OR IGNORE INTO chat_documents(chat_id, doc_id) VALUES (?, ?)", (chat_id, doc_id))
+
+    def detach_document(self, chat_id: int, doc_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM chat_documents WHERE chat_id = ? AND doc_id = ?", (chat_id, doc_id))
+
+    def chat_documents(self, chat_id: int) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT d.id, d.name, d.kind, d.project, length(d.content) AS chars
+                   FROM chat_documents cd JOIN documents d ON d.id = cd.doc_id
+                   WHERE cd.chat_id = ? ORDER BY d.name""",
+                (chat_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]

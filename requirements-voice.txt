@@ -1,0 +1,3 @@
+# Spracherkennung (optional): Diktieren und Audio-Dateien transkribieren – läuft komplett lokal.
+faster-whisper>=1.1
+sounddevice>=0.4

@@ -13,6 +13,7 @@ if errorlevel 1 (
 )
 if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+    ".venv\Scripts\python.exe" -m pip install -r requirements-voice.txt
 )
 echo.
 echo  Fertig! Starte Connor jetzt neu mit start.bat.

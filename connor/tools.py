@@ -8,7 +8,7 @@ from typing import Callable
 
 from . import websearch
 from .database import MEMORY_CATEGORIES, MEMORY_STATUSES, Database, str_to_dt
-from .prompts import format_memory
+from .prompts import format_chunk, format_memory
 from .settings import Settings
 from .timeparse import extract_when, format_dt
 
@@ -62,6 +62,9 @@ def tool_schemas(web: bool = True) -> list[dict]:
             {"memory_id": {"type": "integer"}}, ("memory_id",)),
         _fn("search_chats", "Search earlier saved conversations with the user.",
             {"query": {"type": "string"}}, ("query",)),
+        _fn("search_documents",
+            "Search the user's own files (notes, Word, PDF, e-books, transcripts) that were added to Connor.",
+            {"query": {"type": "string", "description": "Keywords, e.g. a name, place or topic"}}, ("query",)),
         _fn("create_reminder", "Create a reminder that pops up on the user's PC at the given local time.",
             {"text": {"type": "string", "description": "What to remind the user of, in German"},
              "when": {"type": "string", "description": "Local date and time, format YYYY-MM-DD HH:MM"},
@@ -72,12 +75,19 @@ def tool_schemas(web: bool = True) -> list[dict]:
     ]
     if web:
         tools += [
-            _fn("web_search", "Search the internet. Only send general search terms, never private information.",
-                {"query": {"type": "string"}}, ("query",)),
+            _fn("web_search",
+                "Search the internet. Returns results plus excerpts of the best pages. Call it right away "
+                "whenever you need current or uncertain facts. Only send general search terms, never private information.",
+                {"query": {"type": "string", "description": "Short search query, e.g. 'Fussball WM 2026 Sieger'"}},
+                ("query",)),
             _fn("read_webpage", "Read the text of a public web page (http/https URL), e.g. a search result.",
                 {"url": {"type": "string"}}, ("url",)),
         ]
     return tools
+
+
+def tool_names(web: bool = True) -> set[str]:
+    return {tool["function"]["name"] for tool in tool_schemas(web)}
 
 
 def _text(value) -> str:
@@ -117,6 +127,7 @@ class ToolExecutor:
             "update_memory": lambda: f"🧠 Aktualisiere Erinnerung #{_text(a.get('memory_id'))}",
             "delete_memory": lambda: f"🧠 Vergesse Eintrag #{_text(a.get('memory_id'))}",
             "search_chats": lambda: f"💬 Durchsuche alte Chats: «{_text(a.get('query'))}»",
+            "search_documents": lambda: f"📚 Durchsuche deine Dateien: «{_text(a.get('query'))}»",
             "create_reminder": lambda: f"⏰ Neue Erinnerung: {_text(a.get('text'))}",
             "list_reminders": lambda: "⏰ Schaue in deine Erinnerungen",
             "delete_reminder": lambda: f"⏰ Lösche Erinnerung #{_text(a.get('reminder_id'))}",
@@ -199,7 +210,14 @@ class ToolExecutor:
             lines.append(f"- [{r['created_at'][:16]} · Chat «{r['chat_title']}»] {who}: {r['snippet']}")
         return "Gefunden:\n" + "\n".join(lines)
 
-    # ------------------------------------------------------------- reminders
+    def _tool_search_documents(self, a: dict) -> str:
+        query = _text(a.get("query"))
+        chunks = self.db.search_chunks(query, project=self.project, limit=5)
+        if not chunks:
+            if not self.db.list_documents():
+                return "Der User hat noch keine Dateien zu Connor hinzugefügt."
+            return f"In den Dateien habe ich nichts zu «{query}» gefunden."
+        return "Gefunden:\n\n" + "\n\n".join(format_chunk(chunk, max_chars=1500) for chunk in chunks)
     def _tool_create_reminder(self, a: dict) -> str:
         text, when_raw = _text(a.get("text")), _text(a.get("when"))
         if not text or not when_raw:
@@ -247,13 +265,8 @@ class ToolExecutor:
             return "Der User hat die Websuche abgelehnt."
         results = websearch.search(query, provider=self.settings.search_provider,
                                    searxng_url=self.settings.searxng_url)
-        if not results:
-            return f"Keine Treffer für «{query}»."
-        lines = [f"Suchergebnisse für «{query}»:"]
-        for number, r in enumerate(results, 1):
-            lines.append(f"{number}. {r.title}\n   {r.url}\n   {r.snippet[:300]}")
-        lines.append("Nenne die Quellen als Links. Für Details kannst du read_webpage nutzen.")
-        return "\n".join(lines)
+        pages = websearch.read_top_pages(results, query) if results and self.settings.web_read_pages else []
+        return websearch.format_results(query, results, pages)
 
     def _tool_read_webpage(self, a: dict) -> str:
         url = _text(a.get("url"))

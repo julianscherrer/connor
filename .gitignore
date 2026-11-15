@@ -1,5 +1,8 @@
-# Deine persönlichen Daten (Chats, Gedächtnis, Geschichten) – bleiben lokal, nie auf GitHub
+# Deine persönlichen Daten (Chats, Gedächtnis, Geschichten, Dokumente) – bleiben lokal, nie auf GitHub
 data/
+
+# Heruntergeladene Sprachmodelle (werden bei Bedarf neu geladen)
+models/
 
 # Python
 .venv/

@@ -10,7 +10,7 @@ from logging.handlers import RotatingFileHandler
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from .. import APP_NAME, __version__
+from .. import APP_NAME, __version__, websearch
 from ..database import Database
 from ..paths import db_path, log_path
 from ..settings import Settings
@@ -101,6 +101,8 @@ def run(argv: list[str] | None = None) -> int:
     app.setWindowIcon(icon)
     _install_error_hooks()
     log.info("Connor %s startet", __version__)
+    if websearch.use_system_certificates():
+        log.info("Nutze die Zertifikate von Windows für Internetverbindungen")
 
     try:
         db = Database(db_path())

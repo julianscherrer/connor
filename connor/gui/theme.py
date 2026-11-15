@@ -54,6 +54,24 @@ QPushButton#chip {{
 QPushButton#chip:hover {{ border-color: {ACCENT}; }}
 QPushButton#flat {{ background: transparent; border: none; color: {MUTED}; padding: 2px 6px; font-size: 9pt; }}
 QPushButton#flat:hover {{ color: {TEXT}; }}
+QPushButton#toggle {{ background-color: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 10px; }}
+QPushButton#toggle:hover {{ border-color: {ACCENT}; }}
+QPushButton#toggle:checked {{ background-color: {ACCENT_SOFT}; border: 1px solid {ACCENT}; color: white; }}
+QFrame#segmentBox {{ background-color: {SURFACE}; border: 1px solid {BORDER}; border-radius: 9px; }}
+QPushButton#segment {{
+    background: transparent; border: none; border-radius: 7px; padding: 5px 12px; color: {MUTED}; font-weight: 600;
+}}
+QPushButton#segment:hover {{ color: {TEXT}; }}
+QPushButton#segment:checked {{ background-color: {ACCENT}; color: white; }}
+QPushButton#attachment {{
+    background-color: {SURFACE_2}; border: 1px solid {BORDER}; border-radius: 12px; padding: 3px 10px; font-size: 9pt;
+}}
+QPushButton#attachment:hover {{ border-color: {DANGER}; }}
+QPushButton[recording="true"] {{ background-color: #4a1d24; border: 1px solid {DANGER}; color: {TEXT}; }}
+QLabel#dropOverlay {{
+    background-color: rgba(22, 23, 29, 230); color: {TEXT}; border: 3px dashed {ACCENT}; border-radius: 18px;
+    font-size: 16pt; font-weight: 700; padding: 40px;
+}}
 
 QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {{
     background-color: {SURFACE}; color: {TEXT}; border: 1px solid {BORDER}; border-radius: 8px;
@@ -61,6 +79,10 @@ QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QComboBox, QSpinBox, QDouble
 }}
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus,
 QDoubleSpinBox:focus, QDateTimeEdit:focus {{ border-color: {ACCENT}; }}
+QLineEdit#qt_spinbox_lineedit {{ padding: 0 0 0 8px; border: none; background: transparent; }}
+QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+    width: 0px; border: none;
+}}
 QLineEdit#titleEdit {{ font-size: 14pt; font-weight: 700; border: none; background: transparent; padding: 4px 0; }}
 QPlainTextEdit#storyEditor {{ padding: 14px 18px; border-radius: 12px; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}

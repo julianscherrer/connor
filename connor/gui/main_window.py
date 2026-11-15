@@ -1,4 +1,4 @@
-"""Connor's main window: tabs, model picker, tray icon and the reminder clock."""
+"""Connor's main window: tabs, model picker, tray icon, file drops and the reminder clock."""
 from __future__ import annotations
 
 import logging
@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QByteArray, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QIcon
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
                                QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
 
@@ -16,12 +16,15 @@ from ..engine import ConnorEngine
 from ..llm import OLLAMA_DOWNLOAD, RECOMMENDED_MODEL, OllamaClient, OllamaError
 from ..settings import Settings
 from ..timeparse import format_dt
+from ..voice import Transcriber
 from . import theme
 from .chat_tab import ChatTab
 from .common import Worker
+from .documents_tab import DocumentsTab
 from .memory_tab import MemoryTab
 from .reminders_tab import RemindersTab
 from .settings_dialog import SettingsDialog
+from .voice_drop import DropOverlay, DropWatcher
 from .writing_tab import WritingTab
 
 log = logging.getLogger(__name__)
@@ -66,17 +69,22 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.icon = icon
         self.engine = ConnorEngine(db, settings)
+        self.transcriber = Transcriber(settings.voice_model, settings.voice_language, settings.voice_device)
         self._quitting = False
         self._checking = False
+        self._warming = False
+        self._warmed_key: tuple | None = None
         self._workers: set[Worker] = set()
 
         self.setWindowTitle(f"{APP_NAME} – dein lokaler KI-Kumpel")
         self.setWindowIcon(icon)
         self.resize(1240, 820)
-        self.setMinimumSize(960, 620)
+        self.setMinimumSize(1000, 620)
 
-        self.chat_tab = ChatTab(db, self.engine, settings)
-        self.writing_tab = WritingTab(db, self.engine, settings)
+        get_transcriber = lambda: self.transcriber  # noqa: E731 - settings can replace it
+        self.chat_tab = ChatTab(db, self.engine, settings, get_transcriber)
+        self.writing_tab = WritingTab(db, self.engine, settings, get_transcriber)
+        self.documents_tab = DocumentsTab(db, get_transcriber)
         self.memory_tab = MemoryTab(db)
         self.reminders_tab = RemindersTab(db)
 
@@ -85,6 +93,7 @@ class MainWindow(QMainWindow):
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.addTab(self.chat_tab, "💬  Chat")
         self.tabs.addTab(self.writing_tab, "✍️  Schreibwerkstatt")
+        self.tabs.addTab(self.documents_tab, "📚  Dokumente")
         self.tabs.addTab(self.memory_tab, "🧠  Gedächtnis")
         self.tabs.addTab(self.reminders_tab, "⏰  Erinnerungen")
         self.tabs.setCornerWidget(self._build_corner(), Qt.Corner.TopRightCorner)
@@ -94,7 +103,15 @@ class MainWindow(QMainWindow):
         self.chat_tab.data_changed.connect(self.on_data_changed)
         self.chat_tab.connection_problem.connect(lambda: self.check_ollama(try_start=False))
         self.writing_tab.data_changed.connect(self.on_data_changed)
+        self.documents_tab.changed.connect(lambda: self.on_data_changed({"documents", "projects"}))
         self.memory_tab.changed.connect(lambda: self.on_data_changed({"projects"}))
+
+        self.setAcceptDrops(True)
+        self.drop_overlay = DropOverlay(self)
+        # Handle the files after the drop has finished – otherwise Explorer waits for our dialogs.
+        self.drop_overlay.dropped.connect(lambda paths: QTimer.singleShot(0, lambda: self.handle_dropped(paths)))
+        self.drop_watcher = DropWatcher(self, self.show_drop_overlay)
+        QApplication.instance().installEventFilter(self.drop_watcher)
 
         self.tray = self._build_tray()
 
@@ -179,6 +196,9 @@ class MainWindow(QMainWindow):
             self.writing_tab.refresh_projects()
         elif widget is self.chat_tab:
             self.chat_tab.refresh_projects()
+        elif widget is self.documents_tab:
+            self.documents_tab.refresh_projects()
+            self.documents_tab.refresh()
 
     def on_data_changed(self, changes) -> None:
         changes = set(changes or ())
@@ -187,8 +207,41 @@ class MainWindow(QMainWindow):
             self.memory_tab.refresh()
         if "reminder" in changes:
             self.reminders_tab.refresh()
+        if "documents" in changes:
+            self.documents_tab.refresh_projects()
+            self.documents_tab.refresh()
+            self.chat_tab.refresh_attachments()
         self.chat_tab.refresh_projects()
         self.writing_tab.refresh_projects()
+
+    # -------------------------------------------------------------- drops
+    def show_drop_overlay(self) -> None:
+        widget = self.tabs.currentWidget()
+        if widget is self.chat_tab:
+            text = "📎\n\nLoslassen – Connor liest die Dateien\nund hängt sie an diesen Chat"
+        elif widget is self.writing_tab:
+            text = "📥\n\nLoslassen – als Geschichte öffnen\noder als Wissen für Connor speichern"
+        else:
+            text = "📚\n\nLoslassen – Connor nimmt die Dateien\nin deine Dokumente auf"
+        self.drop_overlay.setText(text + "\n\nMarkdown · Text · Word · PDF · E-Book · Audio · ganze Ordner")
+        self.drop_overlay.setGeometry(self.rect().adjusted(12, 12, -12, -12))
+        self.drop_overlay.show()
+        self.drop_overlay.raise_()
+
+    def handle_dropped(self, paths: list[str]) -> None:
+        widget = self.tabs.currentWidget()
+        if widget is self.chat_tab:
+            self.chat_tab.add_files(paths)
+        elif widget is self.writing_tab:
+            self.writing_tab.handle_drop(paths)
+        else:
+            self.tabs.setCurrentWidget(self.documents_tab)
+            self.documents_tab.import_paths(paths)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if self.drop_overlay.isVisible():
+            self.drop_overlay.setGeometry(self.rect().adjusted(12, 12, -12, -12))
 
     # ------------------------------------------------------------- Ollama
     def check_ollama(self, try_start: bool = False) -> None:
@@ -262,6 +315,40 @@ class MainWindow(QMainWindow):
         self.model_box.blockSignals(False)
         self._set_dot(theme.SUCCESS, f"Verbunden mit Ollama – {len(models)} Modell(e)")
         self.chat_tab.set_idle_status(f"🔒 Läuft lokal auf deinem PC  ·  Modell: {chosen}")
+        if chosen in models:
+            self.warm_up()
+
+    def warm_up(self) -> None:
+        """Loads the model in the background so the first answer does not take ages."""
+        key = (self.settings.model, self.settings.context_size, self.settings.default_mode,
+               self.settings.web_enabled, self.settings.use_tools, self.settings.user_name,
+               self.settings.extra_instructions)
+        if self._warming or key == self._warmed_key:
+            return
+        self._warming = True
+        engine = self.engine
+
+        def job(_worker: Worker) -> str:
+            started = time.monotonic()
+            model = engine.warm_up()
+            log.info("Modell %s ist bereit (%.1f s)", model, time.monotonic() - started)
+            return model
+
+        def done(worker: Worker, _result) -> None:
+            self._workers.discard(worker)
+            self._warming = False
+            self._warmed_key = key
+
+        def failed(worker: Worker, message: str) -> None:
+            self._workers.discard(worker)
+            self._warming = False
+            log.info("Vorladen des Modells hat nicht geklappt: %s", message)
+
+        worker = Worker(job)
+        worker.finished.connect(done)
+        worker.failed.connect(failed)
+        self._workers.add(worker)
+        worker.start()
 
     def _set_dot(self, color: str, tooltip: str) -> None:
         self.status_dot.setStyleSheet(f"color: {color};")
@@ -279,6 +366,9 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             dialog.apply()
             self.settings.save()
+            self.transcriber.configure(self.settings.voice_model, self.settings.voice_language,
+                                       self.settings.voice_device)
+            self.chat_tab.apply_settings()
             self.check_ollama(try_start=True)
             if self.chat_tab.chat_id is None:
                 self.chat_tab.new_chat()
@@ -344,8 +434,10 @@ class MainWindow(QMainWindow):
 
     def _shutdown(self) -> None:
         self.reminder_timer.stop()
+        QApplication.instance().removeEventFilter(self.drop_watcher)
         self.writing_tab.shutdown()
         self.chat_tab.shutdown()
+        self.documents_tab.shutdown()
         for worker in list(self._workers):
             worker.stop()
         self._save_settings()

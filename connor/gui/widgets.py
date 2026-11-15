@@ -6,7 +6,7 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QVBoxLayout, QWidget)
 
-from ..llm import strip_think
+from ..llm import strip_think, strip_tool_markup
 
 
 class MessageBubble(QFrame):
@@ -50,7 +50,9 @@ class MessageBubble(QFrame):
         self.set_text(text)
 
     def visible_text(self) -> str:
-        return (strip_think(self.raw) if self.role == "assistant" else self.raw).strip()
+        if self.role != "assistant":
+            return self.raw.strip()
+        return strip_tool_markup(strip_think(self.raw)).strip()
 
     def set_text(self, text: str) -> None:
         self.raw = text
@@ -162,6 +164,9 @@ class ChatView(QScrollArea):
     def _remove_welcome(self) -> None:
         if self._welcome is not None:
             self.clear()
+
+    def has_welcome(self) -> bool:
+        return self._welcome is not None
 
     def add_message(self, role: str, text: str, stamp: str = "") -> MessageBubble:
         self._remove_welcome()

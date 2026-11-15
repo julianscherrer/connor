@@ -3,7 +3,7 @@
 **Dein persönlicher KI-Kumpel – läuft zu 100 % lokal auf deinem PC.**
 Keine Cloud, keine Datencenter, keine fremden Server. Deine Chats, Geschichten und Erinnerungen bleiben bei dir.
 
-Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welten und Plots, schreibt weiter, wenn du feststeckst, merkt sich alles Wichtige und erinnert dich an Termine.
+Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welten und Plots, schreibt weiter, wenn du feststeckst, beantwortet Fragen, liest deine Dateien, versteht deine Stimme, merkt sich alles Wichtige und erinnert dich an Termine.
 
 ---
 
@@ -11,11 +11,13 @@ Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welt
 
 | | |
 |---|---|
-| 💬 **Chat** | Locker reden wie mit einem guten Freund – auf Deutsch (Schweiz), per «du». Antworten erscheinen live. |
+| 💬 **Chat mit zwei Modi** | **💬 Allrounder** für alle Fragen (sachlich, klar, mit Websuche) oder **✍️ Schreibpartner** für Geschichten (kreativ, fantasievoll). Umschalten oben im Chat – pro Chat gespeichert. Locker wie ein guter Freund, auf Deutsch (Schweiz), per «du». |
 | ✍️ **Schreibwerkstatt** | Deine Geschichten in einem eigenen Editor. Ein Klick, und Connor **schreibt weiter**, liefert **Ideen** oder gibt **ehrliches Feedback**. Du entscheidest, was übernommen wird. |
-| 🧠 **Gedächtnis** | Connor merkt sich Charaktere, Orte, Welten, Plot-Ideen und deine Vorlieben – sortiert nach Projekt und Status (Kanon, Entwurf, offen, verworfen). Passende Einträge holt er automatisch hervor, wenn ihr darüber redet. |
+| 📚 **Deine Dateien** | Zieh Dateien oder ganze Ordner ins Fenster – **Markdown, Text, Word, PDF, E-Books, Audio**. Connor findet darin die passenden Stellen, wenn ihr darüber redet. |
+| 🎤 **Diktieren** | Klicken, sprechen, fertig – die Spracherkennung (Whisper) läuft **lokal**. Auch Sprachmemos und Aufnahmen werden transkribiert. |
+| 🧠 **Gedächtnis** | Connor merkt sich Charaktere, Orte, Welten, Plot-Ideen und deine Vorlieben – sortiert nach Projekt und Status (Kanon, Entwurf, offen, verworfen). Passende Einträge holt er automatisch hervor. |
 | ⏰ **Erinnerungen** | «Erinnere mich morgen um 18 Uhr an Kapitel 3» – Connor meldet sich pünktlich, auch minimiert im Tray. Auch wiederholend (täglich/wöchentlich). |
-| 🔎 **Websuche** | Sucht im Internet, liest Seiten und fasst mit Quellen zusammen. Abschaltbar. |
+| 🔎 **Websuche** | Sucht im Internet, liest die besten Seiten und fasst mit Quellen zusammen. Mit **🌐** erzwingst du die Suche. Abschaltbar. |
 | 💾 **Chat-Archiv** | Alle Chats werden gespeichert, sind durchsuchbar und als Markdown exportierbar. |
 
 ---
@@ -23,9 +25,10 @@ Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welt
 ## So bleibt alles bei dir 🔒
 
 - **Das KI-Gehirn ist [Ollama](https://ollama.com)** – ein Programm, das KI-Modelle direkt auf deinem PC ausführt.
-- **Alle Daten liegen im Ordner `data/`** (Datei `connor.db`). Für ein Backup kopierst du einfach diesen Ordner.
+- **Alle Daten liegen im Ordner `data/`** (Datei `connor.db`): Chats, Gedächtnis, Geschichten, gelesene Dateien, Erinnerungen. Für ein Backup kopierst du einfach diesen Ordner.
 - **Der Ordner `data/` wird nie auf GitHub hochgeladen** (steht in `.gitignore`). Auf GitHub landet nur der Programmcode.
-- **Einzige Ausnahme ist die Websuche:** Wenn Connor im Internet sucht, gehen *nur die Suchbegriffe* an DuckDuckGo bzw. Wikipedia – nie deine Chats oder Geschichten. Du kannst die Websuche in den Einstellungen ausschalten, vor jeder Anfrage nachfragen lassen oder eine eigene [SearXNG](https://docs.searxng.org)-Instanz verwenden.
+- **Deine Stimme bleibt auf dem PC.** Nur das Sprachmodell wird beim ersten Diktieren einmalig heruntergeladen (in den Ordner `models/`).
+- **Einzige Ausnahme ist die Websuche:** Wenn Connor im Internet sucht, gehen *nur die Suchbegriffe* an DuckDuckGo, Bing oder Wikipedia – nie deine Chats, Dateien oder Geschichten. Du kannst die Websuche in den Einstellungen ausschalten, vor jeder Anfrage nachfragen lassen oder eine eigene [SearXNG](https://docs.searxng.org)-Instanz verwenden.
 
 ---
 
@@ -67,9 +70,9 @@ cd connor
 *(Ohne Git: Auf GitHub «Code → Download ZIP» und entpacken.)*
 
 ### 5. Starten
-**Doppelklick auf `start.bat`.** Beim ersten Mal richtet sich Connor selbst ein (ein paar Minuten), danach startet er in Sekunden.
+**Doppelklick auf `start.bat`.** Beim ersten Mal richtet sich Connor selbst ein (ein paar Minuten, inklusive Spracherkennung ca. 300 MB), danach startet er in Sekunden.
 
-> Linux/macOS: `./start.sh`
+> Linux/macOS: `./start.sh` (für die Spracherkennung zusätzlich `pip install -r requirements-voice.txt`)
 
 ---
 
@@ -89,9 +92,15 @@ cd connor
 
 ### Chat
 - **Enter** sendet, **Shift+Enter** macht eine neue Zeile. **■ Stopp** bricht eine Antwort ab.
-- Oben rechts im Chat wählst du ein **Projekt** (z. B. «Drachenreiter»). Connor ordnet dann neue Erinnerungen diesem Projekt zu und holt passende Fakten hervor.
-- Die Knöpfe über dem Eingabefeld (✍️ Weiterschreiben, 💡 Ideen, 🧙 Charakter …) geben dir einen Startsatz vor.
+- **Modus** oben im Chat: **💬 Allrounder** für normale Fragen («Wie funktioniert …?», «Plan mir …», «Übersetz …») oder **✍️ Schreibpartner** für Geschichten. Neue Chats starten im zuletzt gewählten Modus.
+- Daneben wählst du ein **Projekt** (z. B. «Drachenreiter»). Connor ordnet dann neue Erinnerungen und Dateien diesem Projekt zu und holt passende Fakten hervor.
+- Die Knöpfe über dem Eingabefeld geben dir einen Startsatz vor – je nach Modus andere.
 - Rechtsklick auf einen Chat links: umbenennen, als Markdown exportieren, löschen.
+
+**Die Knöpfe neben dem Eingabefeld:**
+- **📎 Dateien anhängen** – oder Dateien einfach ins Fenster ziehen. Connor liest sie und nutzt sie in diesem Chat. Grosse Dateien (z. B. ein ganzer Roman) liest er stückweise: Er nimmt jeweils die Stellen, die zu deiner Frage passen.
+- **🌐 Websuche** – solange der Knopf leuchtet, sucht Connor bei *jeder* Nachricht zuerst im Internet und nennt die Quellen. Ohne den Knopf entscheidet er selbst, wann er sucht.
+- **🎤 Diktieren** – klicken, sprechen, nochmals klicken (⏹). Der Text landet im Eingabefeld. In den Einstellungen kannst du «gleich senden» einschalten.
 
 Mit einem Tools-Modell sagst du einfach ganz normal:
 > «Merk dir: Lira ist eine Elfe und hat Angst vor Wasser.»
@@ -113,6 +122,13 @@ Links deine Geschichten, rechts der Editor (speichert automatisch). Unten:
 - **💡 Ideen** – mehrere Richtungen, wie es weitergehen könnte. **🧠 Als Idee merken** speichert sie im Gedächtnis.
 - **🔎 Feedback** – ehrliche Rückmeldung zu Tempo, Figuren, Dialogen und Logik.
 - Im Feld «Wunsch an Connor» kannst du die Richtung vorgeben, z. B. *mehr Spannung* oder *Dialog zwischen Lira und Tom*.
+- **🎤 Diktieren** schreibt deinen gesprochenen Text an die Cursor-Position.
+- **Datei reinziehen:** eine Word- oder Markdown-Datei kannst du **als Geschichte öffnen** (z. B. dein Manuskript) oder **als Wissen speichern** (z. B. Weltenbau-Notizen). Connor nutzt das Wissen deines Projekts beim Weiterschreiben automatisch.
+
+### Dokumente
+Alles, was Connor gelesen hat: Markdown (auch ganze Obsidian-Ordner), Text, Word (.docx), LibreOffice (.odt), PDF, E-Books (.epub), Webseiten (.html) und Audio/Video (.mp3, .m4a, .wav, .mp4 … werden transkribiert). Zieh Dateien oder Ordner einfach ins Fenster oder nutze **＋ Dateien** / **📁 Ordner**. Neue Dateien landen im oben gewählten Projekt. **👁 Anzeigen** zeigt den gelesenen Text, **🏷️ Projekt** ordnet Dateien zu, **🗑️ Entfernen** lässt Connor sie vergessen (deine Originaldateien bleiben unverändert). Liest du eine geänderte Datei erneut ein, ersetzt Connor die alte Version.
+
+> Alte Word-Dateien (.doc) und eingescannte PDFs (nur Bilder) kann Connor nicht lesen – speichere sie als .docx bzw. nutze ein PDF mit Text.
 
 ### Gedächtnis
 Hier siehst und bearbeitest du alles, was Connor weiss. Filtern nach Projekt und Kategorie, Doppelklick zum Bearbeiten. **Kanon** = steht fest, **Entwurf** = Idee in Arbeit, **offen** = ungeklärt, **verworfen** = nicht mehr verwenden.
@@ -123,13 +139,17 @@ Einfach eintippen: *«morgen 18:00 Mama anrufen»*, *«in 2 Stunden Pause»*, *�
 > Erinnerungen funktionieren, solange Connor läuft. Beim Schliessen des Fensters läuft er im Tray (unten rechts) weiter. Tipp: In den Einstellungen **«Connor mit Windows starten»** aktivieren. Verpasste Erinnerungen zeigt er beim nächsten Start.
 
 ### Einstellungen (⚙ oben rechts)
-Modell, Kreativität, Kontextgrösse, Denkmodus, dein Name, Extra-Wünsche an Connors Persönlichkeit, Websuche, Tray und Autostart.
+Modell, Kreativität (je Modus), Standard-Modus, Kontextgrösse, Denkmodus, wie lange das Modell geladen bleibt, dein Name, Extra-Wünsche an Connors Persönlichkeit, Websuche (Suchmaschine, Seiten lesen), Spracherkennung (Modell, Sprache, Grafikkarte/Prozessor), Tray und Autostart.
+
+### Spracherkennung
+Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small», ca. 480 MB – einmalig). Danach läuft alles offline. Hast du eine NVIDIA-Grafikkarte mit installiertem CUDA, rechnet Connor dort, sonst auf dem Prozessor – das geht auch flott. Für noch genauere Ergebnisse in den Einstellungen «Large v3 Turbo» wählen.
 
 ---
 
 ## Update und Backup
 
-- **Update:** Doppelklick auf `update.bat` (holt die neuste Version von GitHub). Deine Daten bleiben unverändert.
+- **Update:** Doppelklick auf `update.bat` – holt die neuste Version von GitHub und installiert neue Pakete. Danach Connor mit `start.bat` neu starten. Deine Daten bleiben unverändert und werden automatisch übernommen.
+  *(Ohne `update.bat`: `git pull` und dann `start.bat` – das installiert neue Pakete ebenfalls automatisch.)*
 - **Backup:** Den Ordner `data/` kopieren. Zum Wiederherstellen zurückkopieren.
 - **Auf einen anderen PC umziehen:** Connor dort installieren und den `data/`-Ordner hineinkopieren.
 
@@ -141,9 +161,14 @@ Modell, Kreativität, Kontextgrösse, Denkmodus, dein Name, Extra-Wünsche an Co
 |---|---|
 | «Ollama läuft nicht» | Ollama starten (Startmenü) oder installieren. Connor versucht es beim Start auch selbst. Danach oben rechts auf ↻ klicken. |
 | «Kein KI-Modell installiert» | Im Terminal `ollama pull qwen3:8b` und dann ↻ klicken. |
-| Antworten sind sehr langsam | Kleineres Modell wählen (`qwen3:4b`), Denkmodus auf «Aus» lassen, Kontextgrösse verkleinern. |
+| Die erste Antwort dauert lange | Beim Start lädt Connor das Modell im Hintergrund – nach ein paar Sekunden geht's schneller. Unter Einstellungen → «Modell bereithalten» kannst du einstellen, wie lange es geladen bleibt. |
+| Antworten sind generell sehr langsam | Im Terminal `ollama ps` – steht dort «CPU», ist die Grafikkarte zu klein. Kleineres Modell wählen (`qwen3:4b`), Denkmodus auf «Aus» lassen, Kontextgrösse verkleinern. |
+| Connor sagt «ich suche» und hört auf | Passiert mit Version 1.1 nicht mehr: Connor sucht dann selbst. Sicher geht's mit dem **🌐**-Knopf oder `/suche …`. |
 | Connor speichert nichts von selbst | Das Modell kann keine Tools → anderes Modell wählen oder `/merke` benutzen. |
-| Websuche klappt nicht | Internet prüfen. DuckDuckGo blockiert manchmal kurz – Connor weicht dann auf Wikipedia aus. |
+| Websuche klappt nicht | Internet prüfen. Blockiert eine Suchmaschine, weicht Connor automatisch aus (DuckDuckGo → Bing → Wikipedia). Virenscanner, die HTTPS prüfen, sind dank Windows-Zertifikaten kein Problem. |
+| 🎤 «Spracherkennung nicht installiert» | `start.bat` oder `update.bat` nochmal ausführen. Klappt die Installation nicht, ist deine Python-Version vielleicht zu neu – Python 3.12 oder 3.13 funktioniert sicher. |
+| 🎤 Es wird nur Stille aufgenommen | Windows → Einstellungen → Datenschutz und Sicherheit → Mikrofon → «Desktop-Apps den Zugriff erlauben». |
+| 🎤 Sprachmodell lädt nicht | Beim ersten Mal braucht Connor Internet. Den Ordner `models/` kannst du löschen, dann lädt er neu. |
 | Fenster verschwunden | Connor läuft im Tray (unten rechts, evtl. unter «^»). Klick aufs Icon. |
 | Etwas anderes | In `data/connor.log` steht, was passiert ist. Zum Debuggen im Terminal starten: `.venv\Scripts\python.exe main.py` |
 
@@ -153,18 +178,20 @@ Modell, Kreativität, Kontextgrösse, Denkmodus, dein Name, Extra-Wünsche an Co
 
 ```
 connor/
-  engine.py       Gesprächslogik: Prompt bauen, Ollama fragen, Werkzeuge ausführen
-  prompts.py      Connors Persönlichkeit (System-Prompt) und Schreib-Vorlagen
-  tools.py        Werkzeuge: Gedächtnis, Erinnerungen, Websuche
-  database.py     SQLite: Chats, Gedächtnis (mit Volltextsuche), Erinnerungen, Geschichten
-  llm.py          Ollama-Anbindung (Streaming, Tools, Abbrechen)
-  websearch.py    DuckDuckGo / Wikipedia / SearXNG + Webseiten lesen
+  engine.py       Gesprächslogik: Prompt bauen, Ollama fragen, Werkzeuge ausführen, Suche erzwingen
+  prompts.py      Connors Persönlichkeit, die zwei Modi und Schreib-Vorlagen
+  tools.py        Werkzeuge: Gedächtnis, Dokumente, Erinnerungen, Websuche
+  database.py     SQLite: Chats, Gedächtnis, Dokumente (mit Volltextsuche), Erinnerungen, Geschichten
+  documents.py    liest Markdown, Text, Word, ODT, PDF, EPUB, HTML und Audio
+  voice.py        Mikrofon und lokale Spracherkennung (faster-whisper)
+  llm.py          Ollama-Anbindung (Streaming, Tools, Abbrechen, Modell vorladen)
+  websearch.py    DuckDuckGo / Bing / Wikipedia / SearXNG + die besten Seiten lesen
   timeparse.py    versteht «morgen um 18 Uhr», «in 2 Stunden», «Freitag abends»
   gui/            das Fenster (PySide6 / Qt)
 tests/            automatische Tests (mit einem simulierten Ollama)
 ```
 
-Connors Persönlichkeit steht in `connor/prompts.py` (`PERSONA`) – dort kannst du sie anpassen. Für kleine Wünsche reicht das Feld «Extra-Wünsche» in den Einstellungen.
+Connors Persönlichkeit steht in `connor/prompts.py` (`BASE`, `WRITER_MODE`, `ASSISTANT_MODE`) – dort kannst du sie anpassen. Für kleine Wünsche reicht das Feld «Extra-Wünsche» in den Einstellungen.
 
 Tests ausführen:
 ```powershell
