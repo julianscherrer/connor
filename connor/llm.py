@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 DEFAULT_URL = "http://localhost:11434"
 OLLAMA_DOWNLOAD = "https://ollama.com/download"
 RECOMMENDED_MODEL = "qwen3:8b"
+RECOMMENDED_VISION_MODEL = "qwen3-vl:8b"
 
 
 class OllamaError(Exception):

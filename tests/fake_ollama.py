@@ -14,7 +14,11 @@ class FakeOllama:
 
     def __init__(self, models=("qwen3:8b",), capabilities=("completion", "tools")):
         self.models = list(models)
-        self.capabilities = list(capabilities) if capabilities is not None else None
+        # a list (same for every model) or a dict model -> list
+        if isinstance(capabilities, dict):
+            self.capabilities = {name: list(caps) for name, caps in capabilities.items()}
+        else:
+            self.capabilities = list(capabilities) if capabilities is not None else None
         self.script: list = []
         self.requests: list[dict] = []
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -60,7 +64,10 @@ class FakeOllama:
                     if fake.capabilities is None:
                         self._json(200, {})
                     else:
-                        self._json(200, {"capabilities": fake.capabilities})
+                        caps = fake.capabilities
+                        if isinstance(caps, dict):
+                            caps = caps.get(payload.get("model") or payload.get("name"), ["completion"])
+                        self._json(200, {"capabilities": caps})
                     return
                 if self.path != "/api/chat":
                     self._json(404, {"error": "not found"})

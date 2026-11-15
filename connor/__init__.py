@@ -1,7 +1,7 @@
 """Connor – dein lokaler KI-Kumpel für Geschichten, Ideen und den Alltag."""
 
 APP_NAME = "Connor"
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 
 def build_id() -> str:

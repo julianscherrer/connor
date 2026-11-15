@@ -1,12 +1,19 @@
 """Connor's memory: everything he knows about your stories, characters, worlds and you."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-                               QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from pathlib import Path
 
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+                               QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMessageBox,
+                               QPlainTextEdit, QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout,
+                               QWidget)
+
+from .. import files
+from ..canon import build_canon_markdown
 from ..database import MEMORY_CATEGORIES, MEMORY_STATUSES, Database
+from ..settings import Settings
 from .common import CATEGORY_LABELS, STATUS_LABELS, pretty_stamp
 
 ALL = "__all__"
@@ -85,9 +92,10 @@ class MemoryTab(QWidget):
 
     COLUMNS = ["Titel", "Kategorie", "Projekt", "Status", "Inhalt", "Geändert"]
 
-    def __init__(self, db: Database, parent: QWidget | None = None):
+    def __init__(self, db: Database, settings: Settings | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self.db = db
+        self.settings = settings
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(200)
@@ -128,6 +136,11 @@ class MemoryTab(QWidget):
         delete_button = QPushButton("🗑️  Löschen")
         delete_button.clicked.connect(self.delete_selected)
         filters.addWidget(delete_button)
+        bible_button = QPushButton("📘  Kanon-Bibel")
+        bible_button.setToolTip("Alle Fakten eines Projekts als ein Word- oder Markdown-Dokument –\n"
+                                "z. B. zum Hochladen in ein Claude-Projekt. Einfach neu exportieren, wenn sich etwas ändert.")
+        bible_button.clicked.connect(self.export_canon)
+        filters.addWidget(bible_button)
         layout.addLayout(filters)
 
         self.table = QTableWidget(0, len(self.COLUMNS))
@@ -238,6 +251,38 @@ class MemoryTab(QWidget):
         for memory_id in ids:
             self.db.delete_memory(memory_id)
         self._after_change()
+
+    def export_canon(self) -> None:
+        choice = self.project_filter.currentData()
+        project = "" if choice in (None, ALL, GENERAL) else choice
+        if not project:
+            projects = self.db.list_projects()
+            if not projects:
+                QMessageBox.information(self, "Kein Projekt", "Ordne deine Einträge zuerst einem Projekt zu.")
+                return
+            project, ok = QInputDialog.getItem(self, "Kanon-Bibel", "Für welches Projekt?", projects, 0, False)
+            if not ok:
+                return
+        folder = files.output_folder(self.settings.files_dir if self.settings else "")
+        suggestion = folder / f"{files.safe_filename('Kanon-Bibel – ' + project)}.docx"
+        path, chosen = QFileDialog.getSaveFileName(self, "Kanon-Bibel speichern", str(suggestion),
+                                                   "Word (*.docx);;Markdown (*.md)")
+        if not path:
+            return
+        target = Path(path)
+        if target.suffix.lower() not in (".docx", ".md"):
+            target = target.with_suffix(".md" if chosen.startswith("Markdown") else ".docx")
+        try:
+            self.export_canon_to(project, target)
+        except OSError as exc:
+            QMessageBox.warning(self, "Hat nicht geklappt", f"Die Datei konnte nicht gespeichert werden:\n{exc}")
+            return
+        answer = QMessageBox.question(self, "Kanon-Bibel gespeichert", f"Gespeichert als:\n{target}\n\nJetzt öffnen?")
+        if answer == QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def export_canon_to(self, project: str, target: Path) -> Path:
+        return files.write_file(target, build_canon_markdown(self.db, project), overwrite=True)
 
     def _after_change(self) -> None:
         self.refresh_projects()

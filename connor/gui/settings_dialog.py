@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget)
 
 from .. import backup, files, system, voice
-from ..llm import RECOMMENDED_MODEL, OllamaClient, OllamaError
+from ..llm import RECOMMENDED_MODEL, RECOMMENDED_VISION_MODEL, OllamaClient, OllamaError
 from ..paths import data_dir, models_dir
 from ..prompts import MODES
 from ..settings import Settings
@@ -74,6 +74,16 @@ class SettingsDialog(QDialog):
         refresh.clicked.connect(self.test_connection)
         model_row.addWidget(refresh)
         model_form.addRow("Modell", model_row)
+        self.vision_model = QComboBox()
+        self.vision_model.setEditable(True)
+        self.vision_model.lineEdit().setPlaceholderText(f"automatisch (z. B. {RECOMMENDED_VISION_MODEL})")
+        if settings.vision_model:
+            self.vision_model.addItem(settings.vision_model)
+        self.vision_model.setCurrentText(settings.vision_model)
+        model_form.addRow("Bild-Modell 🖼️", self.vision_model)
+        model_form.addRow("", _hint("Für Bilder, die du in den Chat ziehst (z. B. Comicseiten). Leer = Connor nimmt "
+                                    "automatisch ein installiertes Modell, das sehen kann. Installieren mit: "
+                                    f"ollama pull {RECOMMENDED_VISION_MODEL}"))
         self.connection_label = _hint("")
         self.connection_label.hide()
         model_form.addRow("", self.connection_label)
@@ -265,6 +275,10 @@ class SettingsDialog(QDialog):
         self.model.clear()
         self.model.addItems(models)
         self.model.setCurrentText(current)
+        current_vision = self.vision_model.currentText()
+        self.vision_model.clear()
+        self.vision_model.addItems(models)
+        self.vision_model.setCurrentText(current_vision)
         if models:
             self.connection_label.setText(f"✅ Verbunden – {len(models)} Modell(e) installiert")
         else:
@@ -287,6 +301,7 @@ class SettingsDialog(QDialog):
         s = self.settings
         s.ollama_url = self.url.text().strip() or "http://localhost:11434"
         s.model = self.model.currentText().strip()
+        s.vision_model = self.vision_model.currentText().strip()
         s.temperature = round(self.temperature.value(), 2)
         s.chat_temperature = round(self.chat_temperature.value(), 2)
         s.default_mode = self.default_mode.currentData()

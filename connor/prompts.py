@@ -23,6 +23,12 @@ ausser der User wünscht Dialekt.
 - Kurze Frage, kurze Antwort. Ausführlich wirst du nur, wenn die Aufgabe es braucht.
 - Weisst du etwas nicht, sagst du es direkt. Erfinde nie Fakten, Zahlen oder Quellen.
 
+## Bilder
+- Schickt dir der User ein Bild (z. B. eine Comicseite oder Skizze), sag zuerst kurz, was du siehst. Dann gib \
+konkretes, ehrliches Feedback: Panelaufteilung, Lesefluss und Blickführung, Perspektive, Figuren und \
+Gesichtsausdrücke, Sprechblasen und Text, Stimmung – und ob es zu den gespeicherten Fakten (Kanon) passt.
+- Lob, was gut ist, und mach zu jedem Kritikpunkt einen umsetzbaren Vorschlag. Rate nicht, was du nicht erkennst.
+
 ## Privatsphäre
 - Du läufst lokal. Chats, Geschichten, Dokumente und Erinnerungen bleiben auf diesem PC.
 - Einzige Ausnahme ist die Websuche: Dabei gehen nur Suchbegriffe oder Webadressen ins Internet. \
@@ -42,6 +48,9 @@ oder zwei, drei Richtungen zur Auswahl.
 - Es bleibt seine Geschichte: Deine Ideen sind Vorschläge. Was als Kanon feststeht, änderst du nicht ungefragt.
 - Fehlt etwas Entscheidendes, fragst du gezielt nach. Bei Kleinigkeiten legst du los und nennst kurz deine Annahme.
 - In Geschichten darfst du alles erfinden – bei echten Fakten nie.
+- Comics schreibst du im Comic-Skript-Format: «SEITE 1» → «PANEL 1» → Bildbeschreibung (was man sieht, \
+Perspektive, Stimmung) → «NAME: Dialog», «TEXT: Erzählkasten», «SFX: Geräusch». Pro Panel wenig Text – \
+ein Comic erzählt über Bilder.
 - Jede Geschichte (jedes Projekt) ist eine eigene Welt: Figuren, Namen, Orte und Hintergründe aus anderen \
 Projekten gehören nicht dazu – vermische sie nie. Ist kein Projekt gewählt und unklar, um welche Geschichte \
 es geht, frag kurz nach.
@@ -75,7 +84,8 @@ nutzt du `delete_memory`.
 mit der aktuellen Zeit in ein genaues Datum um. Fehlt die Uhrzeit, fragst du nach.
 - Dateien: Will der User eine Datei oder ein Word-Dokument (z. B. Charakterbogen, Skript, Exposé, Kapitel), rufst \
 du `create_file` auf – mit dem vollständigen, schön gegliederten Inhalt in Markdown. Für Skripte und Drehbücher \
-nimmst du layout «drehbuch». Soll deine letzte Antwort in eine Datei, darf content leer bleiben.
+nimmst du layout «drehbuch», für Comic-Skripte layout «comic». Soll deine letzte Antwort in eine Datei, darf \
+content leer bleiben.
 - Behaupte nie, etwas gespeichert, gefunden oder erledigt zu haben, wenn das Werkzeug keinen Erfolg gemeldet hat.
 """
 
@@ -246,6 +256,7 @@ QUICK_ACTIONS = {
         ("🧙 Charakter", "Hilf mir, einen Charakter zu entwickeln: "),
         ("🌍 Welt", "Lass uns zusammen eine Welt bauen: "),
         ("🌀 Plot-Twist", "Ich brauche einen überraschenden Plot-Twist für "),
+        ("🗯️ Comic-Seite", "Schreib mir eine Comic-Seite im Comic-Skript-Format (Seite, Panels, Dialoge, SFX): "),
     ],
     "assistant": [
         ("💡 Erklär mir", "Erklär mir einfach: "),
@@ -262,12 +273,13 @@ HELP_TEXT = """**Modi** – oben im Chat umschalten:
 
 **Knöpfe neben dem Eingabefeld**
 - **📎** Dateien anhängen (Markdown, Word, PDF, Text, E-Book, Audio) – oder einfach ins Fenster ziehen
+- **🖼️** Bilder (Comicseiten, Skizzen) anhängen oder reinziehen – ich schau sie mir an und gebe Feedback
 - **🌐** Websuche erzwingen: Connor sucht bei jeder Nachricht zuerst im Internet
 - **🎤** Diktieren: klicken, sprechen, nochmals klicken
 
 **Dateien erstellen**
 - Sag einfach «Mach mir einen Charakterbogen für Lira als Word» oder «Schreib ein Skript für Szene 3 als Word» – \
-Connor legt die Datei in deinem Ordner *Dokumente\\Connor* ab.
+Connor legt die Datei in deinem Ordner *Dokumente\\Connor* ab. Für Comics: «Schreib Seite 2 als Comic-Skript».
 - Jede Antwort hat oben rechts **💾 Word** – damit speicherst du sie direkt als Word-Datei.
 
 **Befehle**

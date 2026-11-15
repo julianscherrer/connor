@@ -490,15 +490,16 @@ class WritingTab(QWidget):
             return
         folder = files.output_folder(self.settings.files_dir)
         suggestion = folder / f"{files.safe_filename(story['title'] or 'Geschichte')}.docx"
-        path, chosen = QFileDialog.getSaveFileName(self, "Geschichte exportieren", str(suggestion),
-                                                   "Word (*.docx);;Markdown (*.md);;Text (*.txt)")
+        filters = {"Word (*.docx)": "dokument", "Word – Comic-Skript (*.docx)": "comic",
+                   "Word – Drehbuch (*.docx)": "drehbuch", "Markdown (*.md)": "dokument", "Text (*.txt)": "dokument"}
+        path, chosen = QFileDialog.getSaveFileName(self, "Geschichte exportieren", str(suggestion), ";;".join(filters))
         if not path:
             return
         target = Path(path)
         if target.suffix.lower() not in (".docx", ".md", ".txt"):
             target = target.with_suffix({"Markdown": ".md", "Text": ".txt"}.get(chosen.split(" ")[0], ".docx"))
         try:
-            self.export_to(target)
+            self.export_to(target, filters.get(chosen, "dokument"))
         except OSError as exc:
             QMessageBox.warning(self, "Hat nicht geklappt", f"Die Datei konnte nicht gespeichert werden:\n{exc}")
             return
@@ -506,9 +507,9 @@ class WritingTab(QWidget):
         if answer == QMessageBox.StandardButton.Yes:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
-    def export_to(self, target: Path) -> Path:
+    def export_to(self, target: Path, layout: str = "dokument") -> Path:
         story = self.db.get_story(self.story_id)
-        files.write_file(target, story["content"], title=story["title"], overwrite=True)
+        files.write_file(target, story["content"], title=story["title"], layout=layout, overwrite=True)
         self.count_label.setText(f"💾 Exportiert: {target}")
         return target
 

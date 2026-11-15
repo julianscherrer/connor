@@ -80,10 +80,11 @@ def tool_schemas(web: bool = True) -> list[dict]:
             {"title": {"type": "string", "description": "Title and file name, e.g. 'Lira – Charakterbogen'"},
              "content": {"type": "string", "description": "The complete content in Markdown"},
              "format": {"type": "string", "enum": ["docx", "md", "txt"], "description": "docx = Word (default)"},
-             "layout": {"type": "string", "enum": ["dokument", "drehbuch"],
+             "layout": {"type": "string", "enum": ["dokument", "drehbuch", "comic"],
                         "description": "drehbuch = screenplay layout for scripts: scene headings like "
                                        "'INT. TAVERNE – NACHT', character names in CAPITALS on their own line, "
-                                       "then their dialogue"}},
+                                       "then their dialogue. comic = comic script: SEITE 1, PANEL 1, "
+                                       "picture description, NAME: dialogue, TEXT: caption, SFX: sound"}},
             ("title",)),
     ]
     if web:

@@ -146,3 +146,68 @@ def test_tool_creates_file_and_uses_previous_answer(db, tmp_path):
     empty = ToolExecutor(db, settings, fallback_content=lambda: "")
     assert empty.execute("create_file", {"title": "Leer"}).startswith("FEHLER")
     assert executor.execute("create_file", {"title": "Notiz", "content": SHEET, "format": "pdf"}).endswith(".docx")
+
+
+COMIC = """# Unstoppable #1
+
+SEITE 1 – Der Absturz
+
+PANEL 1
+Totale: Eine zerstörte Stadt bei Nacht. Rauch steigt auf.
+TEXT: Zürich, drei Tage nach dem Blackout.
+UNSTOPPABLE (leise): Das war nicht ich.
+
+Panel 2: Nahaufnahme von Manias Gesicht.
+**Mania:** Lüg mich nicht an!
+SFX: KRAAACK
+
+**Seite 2**
+
+PANEL 1
+1. TOM: Leute?
+Lira schaut weg: kein Sprecher, nur Beschreibung.
+"""
+
+
+def test_comic_script_parser():
+    blocks = files.parse_comic(COMIC)
+    assert [(b.kind, b.text, b.level, b.marker) for b in blocks] == [
+        ("title", "Unstoppable #1", 0, ""),
+        ("page", "Seite 1", 0, "Der Absturz"),
+        ("panel", "Panel 1", 0, ""),
+        ("description", "Totale: Eine zerstörte Stadt bei Nacht. Rauch steigt auf.", 0, ""),
+        ("lettering", "Zürich, drei Tage nach dem Blackout.", 1, "TEXT"),
+        ("lettering", "Das war nicht ich.", 2, "UNSTOPPABLE (leise)"),
+        ("panel", "Panel 2", 0, ""),
+        ("description", "Nahaufnahme von Manias Gesicht.", 0, ""),
+        ("lettering", "Lüg mich nicht an!", 3, "MANIA"),
+        ("sfx", "KRAAACK", 0, ""),
+        ("page", "Seite 2", 0, ""),
+        ("panel", "Panel 1", 0, ""),
+        ("lettering", "Leute?", 1, "TOM"),
+        ("description", "Lira schaut weg: kein Sprecher, nur Beschreibung.", 0, ""),
+    ]
+
+
+def test_comic_script_as_word(tmp_path):
+    path = files.create_file(tmp_path, "Unstoppable 1", COMIC, layout="comic")
+    _names, document = parts_of(path)
+    assert document.count('<w:pStyle w:val="ComicPage"/>') == 2
+    assert document.count("<w:pageBreakBefore/>") == 1, "every page after the first starts on a new sheet"
+    assert document.count('<w:pStyle w:val="ComicPanel"/>') == 3
+    assert document.count('<w:pStyle w:val="ComicLettering"/>') == 4
+    assert '<w:pStyle w:val="ComicSfx"/>' in document and "KRAAACK" in document
+    with zipfile.ZipFile(path) as archive:
+        styles = archive.read("word/styles.xml").decode("utf-8")
+    for style in ("ComicPage", "ComicPanel", "ComicDescription", "ComicLettering", "ComicSfx"):
+        assert f'w:styleId="{style}"' in styles
+    text = read_document(path)
+    for expected in ("Seite 1 – Der Absturz", "Panel 2", "UNSTOPPABLE (leise):", "Lüg mich nicht an!"):
+        assert expected in text, expected
+
+
+def test_comic_layout_in_tool(db, tmp_path):
+    executor = ToolExecutor(db, Settings(files_dir=str(tmp_path)))
+    result = executor.execute("create_file", {"title": "Seite 1", "content": COMIC, "layout": "comic"})
+    path = files.Path(result.removeprefix("OK: Datei erstellt: "))
+    assert '<w:pStyle w:val="ComicPanel"/>' in parts_of(path)[1]

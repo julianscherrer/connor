@@ -5,7 +5,7 @@ import html
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QGuiApplication, QKeyEvent, QResizeEvent
+from PySide6.QtGui import QGuiApplication, QKeyEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QVBoxLayout, QWidget)
 
@@ -16,10 +16,12 @@ from ..llm import strip_think, strip_tool_markup
 class MessageBubble(QFrame):
     save_requested = Signal(str)
 
-    def __init__(self, role: str, text: str = "", stamp: str = "", parent: QWidget | None = None):
+    def __init__(self, role: str, text: str = "", stamp: str = "", parent: QWidget | None = None,
+                 images: list[str] | tuple = ()):
         super().__init__(parent)
         self.role = role
         self.raw = ""
+        self.images = list(images)
         self.setObjectName("bubbleUser" if role == "user" else "bubbleAssistant")
 
         layout = QVBoxLayout(self)
@@ -56,6 +58,20 @@ class MessageBubble(QFrame):
         self.body.setOpenExternalLinks(True)
         self.body.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         layout.addWidget(self.body)
+        if self.images:
+            gallery = QHBoxLayout()
+            gallery.setSpacing(6)
+            for path in self.images[:6]:
+                thumb = QLabel()
+                pixmap = QPixmap(path)
+                if pixmap.isNull():
+                    thumb.setText("🖼️ (Bild fehlt)")
+                else:
+                    thumb.setPixmap(pixmap.scaledToHeight(160, Qt.TransformationMode.SmoothTransformation))
+                thumb.setToolTip(path)
+                gallery.addWidget(thumb)
+            gallery.addStretch(1)
+            layout.addLayout(gallery)
 
         self._copy_reset = QTimer(self)
         self._copy_reset.setSingleShot(True)
@@ -183,9 +199,9 @@ class ChatView(QScrollArea):
     def has_welcome(self) -> bool:
         return self._welcome is not None
 
-    def add_message(self, role: str, text: str, stamp: str = "") -> MessageBubble:
+    def add_message(self, role: str, text: str, stamp: str = "", images: list[str] | tuple = ()) -> MessageBubble:
         self._remove_welcome()
-        bubble = MessageBubble(role, text, stamp)
+        bubble = MessageBubble(role, text, stamp, images=images)
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)

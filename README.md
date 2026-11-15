@@ -15,8 +15,9 @@ Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welt
 | ✍️ **Schreibwerkstatt** | Deine Geschichten in einem eigenen Editor. Ein Klick, und Connor **schreibt weiter**, liefert **Ideen** oder gibt **ehrliches Feedback**. Du entscheidest, was übernommen wird. |
 | 📚 **Deine Dateien** | Zieh Dateien oder ganze Ordner ins Fenster – **Markdown, Text, Word, PDF, E-Books, Audio**. Connor findet darin die passenden Stellen, wenn ihr darüber redet. |
 | 🎤 **Diktieren** | Klicken, sprechen, fertig – die Spracherkennung (Whisper) läuft **lokal**. Auch Sprachmemos und Aufnahmen werden transkribiert. |
-| 📄 **Word-Dateien erstellen** | «Mach mir einen Charakterbogen für Lira als Word» – Connor erstellt die Datei, Skripte sogar im echten **Drehbuch-Format**. Jede Antwort hat einen **💾 Word**-Knopf, Geschichten exportierst du in der Schreibwerkstatt. |
-| 🧠 **Gedächtnis** | Connor merkt sich Charaktere, Orte, Welten, Plot-Ideen und deine Vorlieben – sortiert nach Projekt und Status (Kanon, Entwurf, offen, verworfen). Passende Einträge holt er automatisch hervor. |
+| 📄 **Word-Dateien erstellen** | «Mach mir einen Charakterbogen für Lira als Word» – Connor erstellt die Datei, Skripte sogar im echten **Drehbuch-** oder **Comic-Skript-Format** (Seite → Panel → nummerierte Sprechblasen). Jede Antwort hat einen **💾 Word**-Knopf, Geschichten exportierst du in der Schreibwerkstatt. |
+| 🖼️ **Bilder ansehen** | Zieh eine Comicseite, Skizze oder ein Charakterdesign in den Chat – Connor schaut es sich an und gibt Feedback zu Seitenaufbau, Lesefluss und Figuren. Auch das läuft **lokal**. |
+| 🧠 **Gedächtnis** | Connor merkt sich Charaktere, Orte, Welten, Plot-Ideen und deine Vorlieben – sortiert nach Projekt und Status (Kanon, Entwurf, offen, verworfen). Passende Einträge holt er automatisch hervor. Mit **📘 Kanon-Bibel** wird daraus ein sauberes Nachschlagewerk als Word-Datei. |
 | ⏰ **Erinnerungen** | «Erinnere mich morgen um 18 Uhr an Kapitel 3» – Connor meldet sich pünktlich, auch minimiert im Tray. Auch wiederholend (täglich/wöchentlich). |
 | 🔎 **Websuche** | Sucht im Internet, liest die besten Seiten und fasst mit Quellen zusammen. Mit **🌐** erzwingst du die Suche. Abschaltbar. |
 | 💾 **Chat-Archiv** | Alle Chats werden gespeichert, sind durchsuchbar und als Markdown exportierbar. |
@@ -26,7 +27,7 @@ Connor hilft dir beim Schreiben von Geschichten, spinnt mit dir Charaktere, Welt
 ## So bleibt alles bei dir 🔒
 
 - **Das KI-Gehirn ist [Ollama](https://ollama.com)** – ein Programm, das KI-Modelle direkt auf deinem PC ausführt.
-- **Alle Daten liegen im Ordner `data/`** (Datei `connor.db`): Chats, Gedächtnis, Geschichten, gelesene Dateien, Erinnerungen. Für ein Backup kopierst du einfach diesen Ordner.
+- **Alle Daten liegen im Ordner `data/`** (Datei `connor.db`): Chats, Gedächtnis, Geschichten, gelesene Dateien, Erinnerungen. Bilder, die du in den Chat ziehst, speichert Connor verkleinert in `data/images`. Für ein Backup kopierst du einfach diesen Ordner.
 - **Der Ordner `data/` wird nie auf GitHub hochgeladen** (steht in `.gitignore`). Auf GitHub landet nur der Programmcode.
 - **Deine Stimme bleibt auf dem PC.** Nur das Sprachmodell wird beim ersten Diktieren einmalig heruntergeladen (in den Ordner `models/`).
 - **Einzige Ausnahme ist die Websuche:** Wenn Connor im Internet sucht, gehen *nur die Suchbegriffe* an DuckDuckGo, Bing oder Wikipedia – nie deine Chats, Dateien oder Geschichten. Du kannst die Websuche in den Einstellungen ausschalten, vor jeder Anfrage nachfragen lassen oder eine eigene [SearXNG](https://docs.searxng.org)-Instanz verwenden.
@@ -62,6 +63,14 @@ Welches Modell passt zu deinem PC?
 | Grafikkarte mit 12–16 GB | `qwen3:14b` | ca. 9 GB |
 
 Andere Modelle gehen auch (z. B. `llama3.1:8b`, `mistral-nemo`). Damit Connor **selbst** speichern, erinnern und suchen kann, braucht das Modell «Tools»-Unterstützung – eine Liste findest du auf [ollama.com/search?c=tools](https://ollama.com/search?c=tools). Ohne Tools funktioniert alles trotzdem, dann über Befehle wie `/merke` (siehe unten).
+
+**Optional – damit Connor Bilder ansehen kann** (Comicseiten, Skizzen):
+
+```powershell
+ollama pull qwen3-vl:8b
+```
+
+Das sind nochmals ca. 6 GB. Connor nimmt dieses Modell automatisch, sobald du ein Bild schickst, und danach wieder dein normales. Du kannst `qwen3-vl:8b` auch gleich als Hauptmodell wählen – es kann schreiben, Tools benutzen *und* sehen, dann muss Connor nie wechseln.
 
 ### 4. Connor holen
 ```powershell
@@ -99,7 +108,7 @@ cd connor
 - Rechtsklick auf einen Chat links: umbenennen, als Markdown exportieren, löschen.
 
 **Die Knöpfe neben dem Eingabefeld:**
-- **📎 Dateien anhängen** – oder Dateien einfach ins Fenster ziehen. Connor liest sie und nutzt sie in diesem Chat. Grosse Dateien (z. B. ein ganzer Roman) liest er stückweise: Er nimmt jeweils die Stellen, die zu deiner Frage passen.
+- **📎 Dateien anhängen** – oder Dateien einfach ins Fenster ziehen. Connor liest sie und nutzt sie in diesem Chat. **Bilder** (PNG, JPG, WebP …) schaut er sich an – siehe [Bilder](#bilder-comicseiten-skizzen). Grosse Dateien (z. B. ein ganzer Roman) liest er stückweise: Er nimmt jeweils die Stellen, die zu deiner Frage passen.
 - **🌐 Websuche** – solange der Knopf leuchtet, sucht Connor bei *jeder* Nachricht zuerst im Internet und nennt die Quellen. Ohne den Knopf entscheidet er selbst, wann er sucht.
 - **🎤 Diktieren** – klicken, sprechen, nochmals klicken (⏹). Der Text landet im Eingabefeld. In den Einstellungen kannst du «gleich senden» einschalten.
 
@@ -135,12 +144,22 @@ Alles, was Connor gelesen hat: Markdown (auch ganze Obsidian-Ordner), Text, Word
 ### Dateien erstellen (Word, Markdown, Text)
 - **Im Chat einfach sagen:** «Mach mir einen Charakterbogen für Lira als Word», «Schreib Szene 3 als Skript in eine Word-Datei» oder «Speicher das als Word». Connor erstellt die Datei und zeigt im Chat einen Link zum **Öffnen** und **Ordner öffnen**.
 - **Skripte** bekommen automatisch ein echtes Drehbuch-Layout: Szenenköpfe (INT. TAVERNE – NACHT), Figurennamen, Regieanweisungen und Dialoge eingerückt, alles in Courier.
+- **Comic-Skripte** («Schreib Seite 3 als Comic-Skript», oder der Knopf **🗯️ Comic-Seite**): jede Seite beginnt auf einem neuen Blatt, darunter die Panels mit Bildbeschreibung, Sprechblasen pro Seite nummeriert (`1. MANIA: …`), Textkästen (`TEXT: …`) und Soundeffekte (`SFX: KRAAACK`). So kann man direkt danach zeichnen oder lettern.
 - **💾 Word** oben rechts an jeder Antwort speichert genau diese Antwort als Word-Datei – das klappt mit jedem Modell.
-- **Schreibwerkstatt:** **💾 Exportieren** speichert die ganze Geschichte als Word, Markdown oder Text.
+- **Schreibwerkstatt:** **💾 Exportieren** speichert die ganze Geschichte als Word, Word – Comic-Skript, Word – Drehbuch, Markdown oder Text.
 - Die Dateien landen in **Dokumente\Connor** (änderbar in den Einstellungen). Connor überschreibt nie eine bestehende Datei – er hängt dann «(2)» an.
 
 ### Gedächtnis
 Hier siehst und bearbeitest du alles, was Connor weiss. Filtern nach Projekt und Kategorie, Doppelklick zum Bearbeiten. **Kanon** = steht fest, **Entwurf** = Idee in Arbeit, **offen** = ungeklärt, **verworfen** = nicht mehr verwenden.
+
+**📘 Kanon-Bibel** macht aus allem, was Connor zu einem Projekt weiss, ein sauberes Dokument (Word oder Markdown): Figuren, Orte, Welt und Regeln, Geschichte, Plot, Ideen – Kanon zuerst, Entwürfe und offene Punkte markiert, Verworfenes weggelassen. Praktisch zum Nachschlagen, Ausdrucken oder als Grundlage für andere Tools.
+
+### Bilder (Comicseiten, Skizzen)
+Zieh ein Bild in den Chat (oder **📎**) – es erscheint als 🖼️-Chip über dem Eingabefeld. Schreib dazu, was du wissen willst («Funktioniert der Seitenaufbau?», «Passt das Design zu Mania?») oder schick es einfach so ab. Connor sagt dir, was er sieht, was gut funktioniert und was du verbessern könntest.
+- Dafür braucht es ein Modell, das sehen kann: `ollama pull qwen3-vl:8b` (siehe Installation). Fehlt es, sagt Connor dir das.
+- Connor wählt das Bild-Modell automatisch. In den Einstellungen kannst du unter **Bild-Modell** ein bestimmtes festlegen.
+- Connor sieht das Bild bei der Nachricht, mit der du es schickst. Bei späteren Fragen erinnert er sich an seine Antwort, aber nicht mehr ans Bild selbst – schick es bei Bedarf einfach nochmal.
+- Grosse Scans werden auf 1600 Pixel verkleinert, damit es flott geht. Deine Originaldatei bleibt unverändert.
 
 ### Erinnerungen
 Einfach eintippen: *«morgen 18:00 Mama anrufen»*, *«in 2 Stunden Pause»*, *«20.11. 9 Uhr Zahnarzt»*. Oder **📅 Mit Datum wählen**. Connor meldet sich mit Benachrichtigung und Popup («In 10 Minuten nochmal» oder «Erledigt»).
@@ -148,7 +167,7 @@ Einfach eintippen: *«morgen 18:00 Mama anrufen»*, *«in 2 Stunden Pause»*, *�
 > Erinnerungen funktionieren, solange Connor läuft. Beim Schliessen des Fensters läuft er im Tray (unten rechts) weiter. Tipp: In den Einstellungen **«Connor mit Windows starten»** aktivieren. Verpasste Erinnerungen zeigt er beim nächsten Start.
 
 ### Einstellungen (⚙ oben rechts)
-Modell, Kreativität (je Modus), Standard-Modus, Kontextgrösse, Denkmodus, wie lange das Modell geladen bleibt, dein Name, Extra-Wünsche an Connors Persönlichkeit, Websuche (Suchmaschine, Seiten lesen), Spracherkennung (Modell, Sprache, Grafikkarte/Prozessor), Tray und Autostart.
+Modell, Bild-Modell, Kreativität (je Modus), Standard-Modus, Kontextgrösse, Denkmodus, wie lange das Modell geladen bleibt, dein Name, Extra-Wünsche an Connors Persönlichkeit, Websuche (Suchmaschine, Seiten lesen), Spracherkennung (Modell, Sprache, Grafikkarte/Prozessor), Tray und Autostart.
 
 ### Spracherkennung
 Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small», ca. 480 MB – einmalig). Danach läuft alles offline. Hast du eine NVIDIA-Grafikkarte mit installiertem CUDA, rechnet Connor dort, sonst auf dem Prozessor – das geht auch flott. Für noch genauere Ergebnisse in den Einstellungen «Large v3 Turbo» wählen.
@@ -174,6 +193,8 @@ Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small»
 | Die erste Antwort dauert lange | Beim Start lädt Connor das Modell im Hintergrund – nach ein paar Sekunden geht's schneller. Unter Einstellungen → «Modell bereithalten» kannst du einstellen, wie lange es geladen bleibt. |
 | Antworten sind generell sehr langsam | Im Terminal `ollama ps` – steht dort «CPU», ist die Grafikkarte zu klein. Kleineres Modell wählen (`qwen3:4b`), Denkmodus auf «Aus» lassen, Kontextgrösse verkleinern. |
 | Connor sagt «ich suche» und hört auf | Passiert mit Version 1.1 nicht mehr: Connor sucht dann selbst. Sicher geht's mit dem **🌐**-Knopf oder `/suche …`. |
+| 🖼️ «Um Bilder anzusehen, braucht Connor ein Bild-Modell» | Im Terminal `ollama pull qwen3-vl:8b`, danach das Bild nochmals schicken. |
+| 🖼️ Bild-Antworten sind sehr langsam | Bild- und Hauptmodell passen nicht beide in die Grafikkarte. Wähle `qwen3-vl:8b` auch als Hauptmodell (Einstellungen → Modell), dann muss Connor nicht wechseln. |
 | Connor speichert nichts von selbst | Das Modell kann keine Tools → anderes Modell wählen oder `/merke` benutzen. |
 | Websuche klappt nicht | Internet prüfen. Blockiert eine Suchmaschine, weicht Connor automatisch aus (DuckDuckGo → Bing → Wikipedia). Virenscanner, die HTTPS prüfen, sind dank Windows-Zertifikaten kein Problem. |
 | 🎤 «Spracherkennung nicht installiert» | `update.bat` ausführen. Bei sehr neuen Python-Versionen (z. B. 3.15) installiert Connor die Spracherkennung automatisch ohne das Zusatzpaket *onnxruntime* – Diktieren funktioniert trotzdem, Connor schneidet Stille dann selbst ab. |
@@ -195,7 +216,8 @@ connor/
   tools.py        Werkzeuge: Gedächtnis, Dokumente, Erinnerungen, Websuche
   database.py     SQLite: Chats, Gedächtnis, Dokumente (mit Volltextsuche), Erinnerungen, Geschichten
   documents.py    liest Markdown, Text, Word, ODT, PDF, EPUB, HTML und Audio
-  files.py        erstellt Word-Dateien (auch im Drehbuch-Layout), Markdown und Text
+  files.py        erstellt Word-Dateien (auch im Drehbuch- und Comic-Layout), Markdown und Text
+  canon.py        baut die Kanon-Bibel eines Projekts
   voice.py        Mikrofon und lokale Spracherkennung (faster-whisper)
   llm.py          Ollama-Anbindung (Streaming, Tools, Abbrechen, Modell vorladen)
   websearch.py    DuckDuckGo / Bing / Wikipedia / SearXNG + die besten Seiten lesen

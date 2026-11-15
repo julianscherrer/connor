@@ -170,6 +170,12 @@ CREATE TABLE IF NOT EXISTS chat_documents (
     doc_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     PRIMARY KEY (chat_id, doc_id)
 );
+CREATE TABLE IF NOT EXISTS message_images (
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    path TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_images ON message_images(message_id, position);
 """
 
 FTS_SCHEMA = """
@@ -316,11 +322,18 @@ class Database:
         with self._connect() as conn:
             conn.execute("UPDATE chats SET project = ? WHERE id = ?", (project, chat_id))
 
-    def delete_chat(self, chat_id: int) -> None:
+    def delete_chat(self, chat_id: int) -> list[str]:
+        """Deletes the chat; returns the image files that belonged to it."""
         with self._connect() as conn:
+            images = [r[0] for r in conn.execute(
+                "SELECT path FROM message_images WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)",
+                (chat_id,)).fetchall()]
+            conn.execute("DELETE FROM message_images WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)",
+                         (chat_id,))
             conn.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
             conn.execute("DELETE FROM chat_documents WHERE chat_id = ?", (chat_id,))
             conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+        return images
 
     def add_message(self, chat_id: int, role: str, content: str) -> int:
         now = now_str()
@@ -338,6 +351,17 @@ class Database:
                 "SELECT * FROM messages WHERE chat_id = ? ORDER BY id", (chat_id,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def add_message_images(self, message_id: int, paths: list[str]) -> None:
+        with self._connect() as conn:
+            conn.executemany("INSERT INTO message_images(message_id, position, path) VALUES (?, ?, ?)",
+                             [(message_id, position, str(path)) for position, path in enumerate(paths)])
+
+    def message_images(self, message_id: int) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT path FROM message_images WHERE message_id = ? ORDER BY position",
+                                (message_id,)).fetchall()
+        return [r[0] for r in rows]
 
     def search_messages(self, query: str, limit: int = 8) -> list[dict]:
         words = keywords(query)

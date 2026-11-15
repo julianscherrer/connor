@@ -1,17 +1,19 @@
 """The conversation engine: builds prompts, talks to Ollama and runs tools."""
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from .database import Database, keywords
 from .files import FILE_EVENT
-from .llm import (RECOMMENDED_MODEL, CancelToken, OllamaClient, OllamaError, ThinkingNotSupported,
-                  ToolsNotSupported, parse_text_tool_calls, strip_think, strip_tool_markup)
+from .llm import (RECOMMENDED_MODEL, RECOMMENDED_VISION_MODEL, CancelToken, OllamaClient, OllamaError,
+                  ThinkingNotSupported, ToolsNotSupported, parse_text_tool_calls, strip_think, strip_tool_markup)
 from .prompts import build_context_block, build_system_prompt
 from .settings import Settings
 from .tools import ToolExecutor, tool_names, tool_schemas
@@ -145,6 +147,14 @@ def sanitize_query(raw: str, fallback: str) -> str:
     return line
 
 
+def _encode_image(path: str) -> str:
+    try:
+        return base64.b64encode(Path(path).read_bytes()).decode("ascii")
+    except OSError:
+        log.warning("Bild %s nicht gefunden", path)
+        return ""
+
+
 def _call_parts(call: dict) -> tuple[str, dict]:
     function = call.get("function") or {}
     args = function.get("arguments") or {}
@@ -179,14 +189,31 @@ class ConnorEngine:
             )
         return models[0]
 
-    def tools_enabled_for(self, client: OllamaClient, model: str) -> bool:
-        if not self.settings.use_tools or model in self._no_tools:
-            return False
+    def _capabilities_of(self, client: OllamaClient, model: str) -> list[str] | None:
         key = (client.base_url, model)
         if key not in self._capabilities:
             self._capabilities[key] = client.capabilities(model)
-        caps = self._capabilities[key]
+        return self._capabilities[key]
+
+    def tools_enabled_for(self, client: OllamaClient, model: str) -> bool:
+        if not self.settings.use_tools or model in self._no_tools:
+            return False
+        caps = self._capabilities_of(client, model)
         return caps is None or "tools" in caps
+
+    def vision_model_for(self, client: OllamaClient, model: str) -> str:
+        """A model that can look at images: the chat model itself, the one from the settings, or any installed one."""
+        if "vision" in (self._capabilities_of(client, model) or []):
+            return model
+        if self.settings.vision_model.strip():
+            return self.settings.vision_model.strip()
+        for candidate in client.list_models():
+            if "vision" in (self._capabilities_of(client, candidate) or []):
+                return candidate
+        raise OllamaError(
+            "Um Bilder anzusehen, braucht Connor ein Bild-Modell. Öffne ein Terminal und tippe:  "
+            f"ollama pull {RECOMMENDED_VISION_MODEL}  – danach kann ich deine Comicseiten und Skizzen ansehen."
+        )
 
     def _options(self, mode: str = "writer", **extra) -> dict:
         temperature = self.settings.chat_temperature if mode == "assistant" else self.settings.temperature
@@ -293,6 +320,7 @@ class ConnorEngine:
         budget = max(4000, (self.settings.context_size - TOKEN_RESERVE) * CHARS_PER_TOKEN - len(system) - len(context))
         selected: list[dict] = []
         used = 0
+        ids: list[int] = []
         for message in reversed(history):
             content = message["content"]
             if selected and used + len(content) > budget:
@@ -300,10 +328,25 @@ class ConnorEngine:
             if len(content) > budget:
                 content = "[…] " + content[-budget:]
             selected.append({"role": message["role"], "content": content})
+            ids.append(message["id"])
             used += len(content)
         selected.reverse()
+        ids.reverse()
+        for position, (message, message_id) in enumerate(zip(selected, ids)):
+            if message["role"] != "user":
+                continue
+            images = self.db.message_images(message_id)
+            if not images:
+                continue
+            if position == len(selected) - 1:
+                encoded = [_encode_image(path) for path in images]
+                message["images"] = [data for data in encoded if data]
+            else:
+                message["content"] += f"\n[{len(images)} Bild(er) angehängt – nicht mehr sichtbar]"
         if selected and selected[-1]["role"] == "user":
-            selected[-1] = {"role": "user", "content": f"{context}\n\n{selected[-1]['content']}"}
+            selected[-1] = {**selected[-1], "content": f"{context}\n\n{selected[-1]['content']}"}
+            if not selected[-1].get("images"):
+                selected[-1].pop("images", None)
         return [{"role": "system", "content": system}, *selected]
 
     # ------------------------------------------------------------- answering
@@ -326,6 +369,14 @@ class ConnorEngine:
         if self.last_sources:
             shown = " · ".join(self.last_sources[:6]) + (" …" if len(self.last_sources) > 6 else "")
             on_event(f"{SOURCES_EVENT}{shown}")
+        if messages[-1].get("images"):
+            vision = self.vision_model_for(client, model)
+            if vision != model:
+                model = vision
+                on_event(f"🖼️ Ich schaue mir das Bild mit {model} an …")
+                if self.tools_enabled_for(client, model) != tools_on:
+                    tools_on = not tools_on
+                    messages = self.build_messages(chat_id, tools=tools_on)
         stored = self.db.get_messages(chat_id)
         last_user = next((m["content"] for m in reversed(stored) if m["role"] == "user"), "")
         last_user_index = max((i for i, m in enumerate(stored) if m["role"] == "user"), default=len(stored))

@@ -22,6 +22,7 @@ from . import theme
 from .chat_tab import ChatTab
 from .common import Worker
 from .documents_tab import DocumentsTab
+from .images import is_image
 from .memory_tab import MemoryTab
 from .reminders_tab import RemindersTab
 from .settings_dialog import SettingsDialog
@@ -86,7 +87,7 @@ class MainWindow(QMainWindow):
         self.chat_tab = ChatTab(db, self.engine, settings, get_transcriber)
         self.writing_tab = WritingTab(db, self.engine, settings, get_transcriber)
         self.documents_tab = DocumentsTab(db, get_transcriber)
-        self.memory_tab = MemoryTab(db)
+        self.memory_tab = MemoryTab(db, settings)
         self.reminders_tab = RemindersTab(db)
 
         self.tabs = QTabWidget()
@@ -226,18 +227,27 @@ class MainWindow(QMainWindow):
     def show_drop_overlay(self) -> None:
         widget = self.tabs.currentWidget()
         if widget is self.chat_tab:
-            text = "📎\n\nLoslassen – Connor liest die Dateien\nund hängt sie an diesen Chat"
+            text = "📎\n\nLoslassen – Connor liest die Dateien und\nschaut sich Bilder an (z. B. Comicseiten)"
         elif widget is self.writing_tab:
             text = "📥\n\nLoslassen – als Geschichte öffnen\noder als Wissen für Connor speichern"
         else:
             text = "📚\n\nLoslassen – Connor nimmt die Dateien\nin deine Dokumente auf"
-        self.drop_overlay.setText(text + "\n\nMarkdown · Text · Word · PDF · E-Book · Audio · ganze Ordner")
+        self.drop_overlay.setText(text + "\n\nMarkdown · Text · Word · PDF · E-Book · Audio · Bilder · ganze Ordner")
         self.drop_overlay.setGeometry(self.rect().adjusted(12, 12, -12, -12))
         self.drop_overlay.show()
         self.drop_overlay.raise_()
 
     def handle_dropped(self, paths: list[str]) -> None:
         widget = self.tabs.currentWidget()
+        if widget is not self.chat_tab:
+            images = [p for p in paths if is_image(p)]
+            paths = [p for p in paths if not is_image(p)]
+            if images:
+                # pictures are looked at in the chat, wherever they were dropped
+                self.tabs.setCurrentWidget(self.chat_tab)
+                self.chat_tab.add_images(images)
+            if not paths:
+                return
         if widget is self.chat_tab:
             self.chat_tab.add_files(paths)
         elif widget is self.writing_tab:

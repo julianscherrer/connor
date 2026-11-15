@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 class Settings:
     ollama_url: str = "http://localhost:11434"
     model: str = ""
+    vision_model: str = ""  # empty = automatic (any installed model that can see images)
     temperature: float = 0.8  # Schreibpartner
     chat_temperature: float = 0.5  # Allrounder
     context_size: int = 8192

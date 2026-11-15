@@ -372,3 +372,118 @@ def test_canon_check_and_backup(window, db, fake, tmp_path):
     window.run_backup()
     assert wait_until(lambda: not window._backing_up)
     assert list((tmp_path / "backups").glob("connor-*.db"))
+
+
+def make_picture(path, width=2400, height=1200):
+    from PySide6.QtGui import QColor, QImage
+
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
+    image.fill(QColor(200, 30, 30, 128))
+    assert image.save(str(path))
+    return path
+
+
+def test_picture_in_chat(window, db, fake, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QMessageBox, QPushButton
+
+    from connor.gui.images import images_dir
+    from connor.gui.widgets import MessageBubble
+
+    fake.models.append("qwen3-vl:8b")
+    fake.capabilities = {"qwen3:8b": ["completion", "tools"], "qwen3-vl:8b": ["completion", "vision", "tools"]}
+    window.engine._capabilities.clear()
+    page = make_picture(tmp_path / "seite1.png")
+    broken = tmp_path / "kaputt.jpg"
+    broken.write_bytes(b"kein Bild")
+
+    window.tabs.setCurrentWidget(window.writing_tab)
+    window.handle_dropped([str(page), str(broken)])
+    chat = window.chat_tab
+    assert window.tabs.currentWidget() is chat, "pictures are looked at in the chat"
+    assert [name for name, _path in chat.pending_images] == ["seite1.png"]
+    prepared = Path(chat.pending_images[0][1])
+    assert prepared.parent == images_dir() and prepared.suffix == ".jpg"
+    assert QImage(str(prepared)).width() == 1600, "big scans are scaled down"
+    chips = [b.text() for b in chat.attachment_bar.findChildren(QPushButton) if b.isVisibleTo(window)]
+    assert any("seite1.png" in text for text in chips) and chat.attachment_bar.isVisibleTo(window)
+
+    fake.script.append({"content": "Starke Seite! Panel 2 knallt."})
+    chat.send()
+    assert wait_until(lambda: not chat.busy)
+    request = fake.requests[-1]
+    assert request["model"] == "qwen3-vl:8b" and len(request["messages"][-1]["images"]) == 1
+    assert request["messages"][-1]["content"].endswith("Was sagst du dazu?")
+    assert not chat.pending_images and not chat.attachment_bar.isVisibleTo(window)
+    events = [m["content"] for m in db.get_messages(chat.chat_id) if m["role"] == "event"]
+    assert any("qwen3-vl:8b" in text for text in events)
+    bubble = [b for b in chat.view.findChildren(MessageBubble) if b.role == "user"][-1]
+    assert bubble.images == [str(prepared)]
+
+    chat_id = chat.chat_id
+    chat.new_chat()
+    chat.open_chat(chat_id)
+
+    def shown_user_bubbles():
+        return [b for b in chat.view.findChildren(MessageBubble) if b.role == "user" and b.isVisibleTo(window)]
+
+    assert wait_until(lambda: shown_user_bubbles())
+    bubble = shown_user_bubbles()[-1]
+    assert bubble.images == [str(prepared)]
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args, **_kw: QMessageBox.StandardButton.Yes)
+    chat.delete_chat(chat_id)
+    assert not prepared.exists() and page.exists(), "only Connor's copy is deleted"
+
+
+def test_remove_picture_before_sending(window, tmp_path):
+    chat = window.chat_tab
+    chat.add_files([str(make_picture(tmp_path / "skizze.png", 300, 200))])
+    assert len(chat.pending_images) == 1
+    chat.remove_image(0)
+    assert not chat.pending_images and not chat.attachment_bar.isVisibleTo(window)
+
+
+def test_canon_bible_and_comic_export(window, db, tmp_path):
+    from connor.documents import read_document
+
+    db.add_memory("Unstoppable", "Origin: Laborunfall in Zürich", "charakter", "Comic", "kanon")
+    db.add_memory("Mania", "Rivalin", "charakter", "Comic")
+    target = window.memory_tab.export_canon_to("Comic", tmp_path / "Kanon.docx")
+    text = read_document(target)
+    assert text.startswith("# Kanon-Bibel – Comic") and "## Figuren" in text
+    assert "Laborunfall" in text and "Mania (Entwurf)" in text
+    markdown = window.memory_tab.export_canon_to("Comic", tmp_path / "Kanon.md")
+    assert markdown.read_text(encoding="utf-8").startswith("# Kanon-Bibel – Comic")
+
+    desk = window.writing_tab
+    desk.new_story()
+    desk.title_edit.setText("Unstoppable #1")
+    desk.editor.setPlainText("SEITE 1\n\nPANEL 1\nEine Stadt bei Nacht.\nUNSTOPPABLE: Los geht's.")
+    desk.save_current()
+    comic = desk.export_to(tmp_path / "Comic.docx", layout="comic")
+    import zipfile
+
+    with zipfile.ZipFile(comic) as archive:
+        document = archive.read("word/document.xml").decode("utf-8")
+    assert '<w:pStyle w:val="ComicLettering"/>' in document and "UNSTOPPABLE: " in document
+
+def test_settings_dialog_vision_model(window, fake):
+    from connor.gui.settings_dialog import SettingsDialog
+
+    fake.models.append("qwen3-vl:8b")
+    window.settings.vision_model = "llava:7b"
+    dialog = SettingsDialog(window.settings, window)
+    assert dialog.vision_model.currentText() == "llava:7b"
+    dialog.test_connection()
+    items = [dialog.vision_model.itemText(i) for i in range(dialog.vision_model.count())]
+    assert "qwen3-vl:8b" in items and dialog.vision_model.currentText() == "llava:7b"
+    dialog.vision_model.setCurrentText("qwen3-vl:8b")
+    dialog.apply()
+    assert window.settings.vision_model == "qwen3-vl:8b" and window.settings.model == "qwen3:8b"
+    dialog.vision_model.setCurrentText("  ")
+    dialog.apply()
+    assert window.settings.vision_model == ""
+    dialog.deleteLater()

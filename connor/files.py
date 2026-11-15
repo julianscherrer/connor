@@ -10,7 +10,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 FORMATS = ("docx", "md", "txt")
-LAYOUTS = ("dokument", "drehbuch")
+LAYOUTS = ("dokument", "drehbuch", "comic")
 FILE_EVENT = "📄 Datei erstellt: "
 
 _INVALID_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -202,6 +202,16 @@ STYLES = XML_HEAD + (
              f"{_COURIER}{_SCRIPT_SIZE}")
     + _style("ScriptTransition", "Drehbuch Übergang", '<w:spacing w:before="240" w:after="0"/><w:jc w:val="right"/>',
              f"{_COURIER}<w:caps/>{_SCRIPT_SIZE}")
+    + _style("ComicPage", "Comic Seite", '<w:keepNext/>'
+             '<w:pBdr><w:bottom w:val="single" w:sz="8" w:space="1" w:color="8B5CF6"/></w:pBdr>'
+             '<w:spacing w:before="360" w:after="120"/>',
+             '<w:b/><w:caps/><w:color w:val="4C1D95"/><w:sz w:val="32"/><w:szCs w:val="32"/>')
+    + _style("ComicPanel", "Comic Panel", '<w:keepNext/><w:spacing w:before="240" w:after="60"/>',
+             '<w:b/><w:caps/><w:color w:val="374151"/><w:sz w:val="24"/><w:szCs w:val="24"/>')
+    + _style("ComicDescription", "Comic Bildbeschreibung", '<w:spacing w:after="80"/>', "")
+    + _style("ComicLettering", "Comic Sprechblase", '<w:spacing w:after="60"/><w:ind w:left="1080" w:hanging="360"/>', "")
+    + _style("ComicSfx", "Comic Soundeffekt", '<w:spacing w:after="60"/><w:ind w:left="1080" w:hanging="360"/>',
+             '<w:b/><w:caps/><w:color w:val="B45309"/>')
     + '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders>'
     + "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>'
               for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
@@ -498,11 +508,103 @@ def _screenplay_body(blocks: list[Block], title: str) -> str:
 
 A4 = '<w:pgSz w:w="11906" w:h="16838"/>'
 
+_COMIC_PAGE = re.compile(r"^#{0,3}\s*\**\s*(?:seite|page)\s+(\w+)\b\**\s*[:.\-–]?\s*(.*)$", re.I)
+_COMIC_PANEL = re.compile(r"^#{0,4}\s*\**\s*panel\s+(\w+)\b\**\s*[:.\-–]?\s*(.*)$", re.I)
+_COMIC_LINE = re.compile(r"^(?:\d+[.)]\s*)?\**([A-Za-zÄÖÜäöüß][\wÄÖÜäöüß .'\-]{0,30}?)\**\s*(\([^)]*\))?\s*\**\s*:\s*\**\s*(.+)$")
+_SFX_NAMES = {"sfx", "geräusch", "geraeusch", "sound", "soundeffekt", "fx"}
+_CAPTION_NAMES = {"caption", "text", "erzähler", "erzaehler", "erzähltext", "textkasten", "kasten", "box", "off"}
+_DESCRIPTION_NAMES = {"bild", "beschreibung", "description", "szene", "panelbeschreibung", "totale", "halbtotale",
+                      "nahaufnahme", "nah", "close-up", "closeup", "detail", "weitwinkel", "vogelperspektive",
+                      "froschperspektive", "establishing shot", "einstellung", "perspektive"}
+
+
+def parse_comic(text: str) -> list[Block]:
+    """Understands comic scripts: SEITE 1 → PANEL 1 → description → NAME: dialogue, TEXT: caption, SFX: sound.
+    Lettering (balloons and captions) is numbered per page, as in professional comic scripts."""
+    blocks: list[Block] = []
+    number = 0
+    for raw in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        heading = _HEADING.match(line)
+        page = _COMIC_PAGE.match(line)
+        panel = _COMIC_PANEL.match(line)
+        if page:
+            number = 0
+            blocks.append(Block("page", f"Seite {page.group(1)}", marker=_strip_emphasis(page.group(2))))
+        elif panel:
+            blocks.append(Block("panel", f"Panel {panel.group(1)}"))
+            if panel.group(2).strip():
+                blocks.append(Block("description", _strip_emphasis(panel.group(2))))
+        elif heading and not blocks:
+            blocks.append(Block("title", _strip_emphasis(heading.group(2))))
+        elif heading:
+            blocks.append(Block("panel", _strip_emphasis(heading.group(2))))
+        elif (lettering := _lettering(line)) is not None:
+            name, modifier, words = lettering
+            key = name.casefold()
+            if key in _DESCRIPTION_NAMES:
+                label_only = key in {"bild", "beschreibung", "description", "panelbeschreibung"}
+                blocks.append(Block("description", words if label_only else f"{name}: {words}"))
+            elif key in _SFX_NAMES:
+                blocks.append(Block("sfx", words))
+            else:
+                number += 1
+                label = "TEXT" if key in _CAPTION_NAMES else name.upper()
+                blocks.append(Block("lettering", words, level=number,
+                                    marker=f"{label} {modifier}".strip() if modifier else label))
+        else:
+            blocks.append(Block("description", _strip_emphasis(line.lstrip("-•* ").strip())))
+    return blocks
+
+
+def _lettering(line: str) -> tuple[str, str, str] | None:
+    """«MAX (leise): Text», «**Mania:** Text», «1. TOM: Text», «SFX: BOOM» – but not «Totale: Eine Fabrik»."""
+    match = _COMIC_LINE.match(line)
+    if not match or len(match.group(1).split()) > 3:
+        return None
+    name = match.group(1).strip()
+    key = name.casefold()
+    marked = name.isupper() or line.startswith(("**", "__")) or re.match(r"^\d+[.)]", line) is not None
+    if not marked and key not in _SFX_NAMES | _CAPTION_NAMES | _DESCRIPTION_NAMES:
+        return None
+    return name, (match.group(2) or "").strip(), _strip_emphasis(match.group(3))
+
+
+def _comic_body(blocks: list[Block], title: str) -> str:
+    body = []
+    if blocks and blocks[0].kind == "title":
+        body.append(_paragraph(_runs(blocks[0].text), "Title"))
+        blocks = blocks[1:]
+    elif title:
+        body.append(_paragraph(_run(title), "Title"))
+    first_page = True
+    for block in blocks:
+        if block.kind == "page":
+            text = block.text + (f" – {block.marker}" if block.marker else "")
+            props = "" if first_page else "<w:pageBreakBefore/>"
+            body.append(f'<w:p><w:pPr><w:pStyle w:val="ComicPage"/>{props}</w:pPr>{_run(text)}</w:p>')
+            first_page = False
+        elif block.kind == "panel":
+            body.append(_paragraph(_run(block.text), "ComicPanel"))
+        elif block.kind == "lettering":
+            body.append(_paragraph(_run(f"{block.level}.\t") + _run(f"{block.marker}: ", bold=True) + _runs(block.text),
+                                   "ComicLettering"))
+        elif block.kind == "sfx":
+            body.append(_paragraph(_run("SFX:\t") + _run(block.text), "ComicSfx"))
+        else:
+            body.append(_paragraph(_runs(block.text), "ComicDescription"))
+    return "".join(body)
+
 
 def write_docx(path: Path, content: str, *, title: str = "", layout: str = "dokument", overwrite: bool = False) -> None:
     if layout == "drehbuch":
         body = _screenplay_body(parse_screenplay(content), title)
         margins = '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="2160" w:header="708" w:footer="708" w:gutter="0"/>'
+    elif layout == "comic":
+        body = _comic_body(parse_comic(content), title)
+        margins = '<w:pgMar w:top="1417" w:right="1417" w:bottom="1134" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/>'
     else:
         body = _document_body(parse_markdown(content), title, text_width=11906 - 2 * 1417)
         margins = '<w:pgMar w:top="1417" w:right="1417" w:bottom="1134" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/>'

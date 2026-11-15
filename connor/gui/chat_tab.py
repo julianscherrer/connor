@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
@@ -22,6 +23,7 @@ from ..settings import Settings
 from ..timeparse import extract_when, format_dt, parse_when
 from ..voice import Transcriber
 from .common import SUBTITLE_ROLE, TwoLineDelegate, Worker, now_stamp, pretty_stamp
+from .images import IMAGE_SUFFIXES, is_image, prepare_image, remove_images
 from .voice_drop import MicButton
 from .widgets import ChatInput, ChatView, MessageBubble
 
@@ -40,8 +42,8 @@ def make_title(text: str, limit: int = 48) -> str:
 
 
 def file_filter() -> str:
-    patterns = " ".join(f"*{ext}" for ext in supported_extensions())
-    return f"Dokumente und Audio ({patterns});;Alle Dateien (*)"
+    patterns = " ".join(f"*{ext}" for ext in [*supported_extensions(), *sorted(IMAGE_SUFFIXES)])
+    return f"Dokumente, Bilder und Audio ({patterns});;Alle Dateien (*)"
 
 
 class ChatTab(QWidget):
@@ -58,6 +60,7 @@ class ChatTab(QWidget):
         self.chat_id: int | None = None
         self.mode = settings.default_mode if settings.default_mode in MODES else "writer"
         self.pending_docs: list[int] = []
+        self.pending_images: list[tuple[str, str]] = []  # (shown name, prepared file)
         self.idle_status = "🔒 Läuft lokal auf deinem PC"
 
         self._active: Worker | None = None
@@ -296,7 +299,7 @@ class ChatTab(QWidget):
     def welcome_text(self) -> str:
         name = self.settings.user_name.strip()
         hello = f"Hoi {name}! 👋" if name else "Hoi! 👋"
-        tips = ("- **📎** Dateien anhängen oder einfach ins Fenster ziehen – ich lese sie\n"
+        tips = ("- **📎** Dateien oder Bilder anhängen oder einfach ins Fenster ziehen – ich lese sie und schau sie mir an\n"
                 "- **🌐** Websuche einschalten für aktuelle Infos\n"
                 "- **🎤** diktieren statt tippen\n"
                 "- `/hilfe` zeigt alle Befehle\n")
@@ -398,8 +401,29 @@ class ChatTab(QWidget):
             more = QLabel(f"+ {len(docs) - 8} weitere")
             more.setObjectName("small")
             self.attachment_layout.addWidget(more)
+        for index, (name, _path) in enumerate(self.pending_images):
+            chip = QPushButton(f"🖼️ {name}  ✕")
+            chip.setObjectName("attachment")
+            chip.setToolTip("Wird mit deiner nächsten Nachricht gezeigt – klicken zum Entfernen")
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.clicked.connect(lambda _checked=False, i=index: self.remove_image(i))
+            self.attachment_layout.addWidget(chip)
         self.attachment_layout.addStretch(1)
-        self.attachment_bar.setVisible(bool(docs))
+        self.attachment_bar.setVisible(bool(docs or self.pending_images))
+
+    def remove_image(self, index: int) -> None:
+        if 0 <= index < len(self.pending_images):
+            self.pending_images.pop(index)
+        self.refresh_attachments()
+
+    def add_images(self, paths: list[str]) -> None:
+        for path in paths:
+            try:
+                self.pending_images.append((Path(path).name, str(prepare_image(path))))
+            except (ValueError, OSError) as exc:
+                self.view.add_event(f"⚠️ {exc}", error=True)
+        self.refresh_attachments()
+        self.input.setFocus()
 
     def detach(self, doc_id: int) -> None:
         if self.chat_id is not None:
@@ -414,6 +438,12 @@ class ChatTab(QWidget):
             self.add_files(paths)
 
     def add_files(self, paths: list[str]) -> None:
+        images = [p for p in paths if is_image(p)]
+        if images:
+            self.add_images(images)
+        paths = [p for p in paths if not is_image(p)]
+        if not paths:
+            return
         if self._import_worker is not None:
             QMessageBox.information(self, "Moment", "Ich lese gerade noch andere Dateien – gleich fertig.")
             return
@@ -468,8 +498,9 @@ class ChatTab(QWidget):
         if not text.strip():
             return
         try:
+            layout = "comic" if re.search(r"(?im)^\W*(panel|seite|page)\s+\d", text) else "dokument"
             path = files.create_file(files.output_folder(self.settings.files_dir), files.title_from_text(text),
-                                     text, "docx")
+                                     text, "docx", layout)
         except OSError as exc:
             self.view.add_event(f"⚠️ Die Word-Datei konnte nicht gespeichert werden: {exc}", error=True)
             return
@@ -528,7 +559,9 @@ class ChatTab(QWidget):
         self.view.clear()
         for message in self.db.get_messages(chat_id):
             if message["role"] in ("user", "assistant"):
-                self.view.add_message(message["role"], message["content"], pretty_stamp(message["created_at"]))
+                images = self.db.message_images(message["id"]) if message["role"] == "user" else []
+                self.view.add_message(message["role"], message["content"], pretty_stamp(message["created_at"]),
+                                      images=images)
             elif message["role"] == "event":
                 self.view.add_event(message["content"])
         self.refresh_attachments()
@@ -599,12 +632,14 @@ class ChatTab(QWidget):
             return
         if chat_id == self.chat_id:
             self.new_chat()
-        self.db.delete_chat(chat_id)
+        remove_images(self.db.delete_chat(chat_id))
         self.refresh_chat_list()
 
     # ------------------------------------------------------------ sending
     def send(self) -> None:
         text = self.input.toPlainText().strip()
+        if not text and self.pending_images:
+            text = "Was sagst du dazu?"
         if not text or self.busy:
             return
         if text.startswith("/") and self._handle_command(text):
@@ -625,12 +660,16 @@ class ChatTab(QWidget):
         if note:
             self._project_changed()
             self.db.add_message(chat_id, "event", note)
-        self.db.add_message(chat_id, "user", text)
+        message_id = self.db.add_message(chat_id, "user", text)
+        images = [path for _name, path in self.pending_images]
+        if images:
+            self.db.add_message_images(message_id, images)
+            self.pending_images = []
         had_welcome = self.view.has_welcome()
         self.open_chat_view_if_needed(chat_id)
         if note and not had_welcome:
             self.view.add_event(note)
-        self.view.add_message("user", text, now_stamp())
+        self.view.add_message("user", text, now_stamp(), images=images)
         self.view.scroll_to_bottom()
         self.refresh_attachments()
         engine = self.engine
