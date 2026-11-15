@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
                                QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget)
 
-from .. import files, system, voice
+from .. import backup, files, system, voice
 from ..llm import RECOMMENDED_MODEL, OllamaClient, OllamaError
 from ..paths import data_dir, models_dir
 from ..prompts import MODES
@@ -39,9 +39,10 @@ def _hint(text: str) -> QLabel:
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings: Settings, parent: QWidget | None = None):
+    def __init__(self, settings: Settings, parent: QWidget | None = None, backup_now=None):
         super().__init__(parent)
         self.settings = settings
+        self.backup_now = backup_now
         self.setWindowTitle("Einstellungen")
         self.resize(640, 720)
 
@@ -207,6 +208,29 @@ class SettingsDialog(QDialog):
         open_files.clicked.connect(lambda: system.open_folder(files.output_folder(self.files_dir.text())))
         files_row.addWidget(open_files)
         system_form.addRow("Erstellte Dateien", files_row)
+
+        self.backup_enabled = QCheckBox("Jeden Tag automatisch sichern (die letzten 14 Tage bleiben erhalten)")
+        self.backup_enabled.setChecked(settings.backup_enabled)
+        system_form.addRow("Backup", self.backup_enabled)
+        backup_row = QHBoxLayout()
+        self.backup_dir = QLineEdit(settings.backup_dir)
+        self.backup_dir.setPlaceholderText(str(backup.default_folder()))
+        backup_row.addWidget(self.backup_dir, 1)
+        choose_backup = QPushButton("Ändern …")
+        choose_backup.clicked.connect(self._choose_backup_dir)
+        backup_row.addWidget(choose_backup)
+        backup_now = QPushButton("Jetzt sichern")
+        backup_now.setEnabled(self.backup_now is not None)
+        backup_now.clicked.connect(lambda: self.backup_now and self.backup_now())
+        backup_row.addWidget(backup_now)
+        system_form.addRow("Backup-Ordner", backup_row)
+        try:
+            latest = backup.latest_backup(backup.backup_folder(settings.backup_dir))
+        except OSError:
+            latest = None
+        system_form.addRow("", _hint((f"Letztes Backup: {latest.name}. " if latest else "Noch kein Backup. ")
+                                     + "Tipp: Wähl einen Ordner auf einem USB-Stick oder in OneDrive – dann "
+                                     "sind deine Geschichten auch sicher, wenn der PC kaputtgeht."))
         system_form.addRow("", _hint("Hier liegen Chats, Gedächtnis, Geschichten und Erinnerungen (connor.db). "
                                      "Für ein Backup einfach diesen Ordner kopieren."))
         column.addWidget(system_box)
@@ -247,6 +271,12 @@ class SettingsDialog(QDialog):
             self.connection_label.setText(f"⚠️ Verbunden, aber noch kein Modell installiert. "
                                           f"Im Terminal: ollama pull {RECOMMENDED_MODEL}")
 
+    def _choose_backup_dir(self) -> None:
+        start = self.backup_dir.text().strip() or str(backup.default_folder())
+        folder = QFileDialog.getExistingDirectory(self, "Ordner für Backups", start)
+        if folder:
+            self.backup_dir.setText(folder)
+
     def _choose_files_dir(self) -> None:
         start = self.files_dir.text().strip() or str(files.default_folder())
         folder = QFileDialog.getExistingDirectory(self, "Ordner für Dateien von Connor", start)
@@ -276,6 +306,8 @@ class SettingsDialog(QDialog):
         s.voice_device = self.voice_device.currentData()
         s.voice_autosend = self.voice_autosend.isChecked()
         s.files_dir = self.files_dir.text().strip()
+        s.backup_enabled = self.backup_enabled.isChecked()
+        s.backup_dir = self.backup_dir.text().strip()
         s.minimize_to_tray = self.tray.isChecked()
         if system.autostart_supported() and self.autostart.isChecked() != system.autostart_enabled():
             try:

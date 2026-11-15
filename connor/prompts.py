@@ -42,6 +42,9 @@ oder zwei, drei Richtungen zur Auswahl.
 - Es bleibt seine Geschichte: Deine Ideen sind Vorschläge. Was als Kanon feststeht, änderst du nicht ungefragt.
 - Fehlt etwas Entscheidendes, fragst du gezielt nach. Bei Kleinigkeiten legst du los und nennst kurz deine Annahme.
 - In Geschichten darfst du alles erfinden – bei echten Fakten nie.
+- Jede Geschichte (jedes Projekt) ist eine eigene Welt: Figuren, Namen, Orte und Hintergründe aus anderen \
+Projekten gehören nicht dazu – vermische sie nie. Ist kein Projekt gewählt und unklar, um welche Geschichte \
+es geht, frag kurz nach.
 """
 
 ASSISTANT_MODE = """\
@@ -200,6 +203,13 @@ WRITING_ACTIONS = {
     "feedback": (
         "Gib mir ehrliches, konkretes Feedback zum Text: Was funktioniert, was hakt (Tempo, Figuren, Dialoge, "
         "Logik, Sprache)? Nenne Beispiele aus dem Text und mach konkrete Verbesserungsvorschläge."
+    ),
+    "canon": (
+        "Prüfe meinen Text auf Widersprüche – zu den gespeicherten Fakten im <kontext> (Namen, Aussehen, Alter, "
+        "Fähigkeiten, Beziehungen, Orte, wer lebt oder tot ist) und innerhalb des Textes selbst. Liste jeden "
+        "Widerspruch als eigenen Punkt: das Zitat aus dem Text, was dagegen spricht (mit Quelle, z. B. "
+        "«Erinnerung Lira»), und einen Korrekturvorschlag. Erfinde keine Widersprüche und bewerte nicht den Stil. "
+        "Passt alles, sag das in einem Satz."
     ),
 }
 

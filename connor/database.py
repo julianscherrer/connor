@@ -12,6 +12,7 @@ from typing import Iterator
 log = logging.getLogger(__name__)
 
 MEMORY_CATEGORIES = ("charakter", "welt", "ort", "plot", "idee", "story", "vorliebe", "notiz")
+STORY_CATEGORIES = frozenset({"charakter", "welt", "ort", "plot", "idee", "story"})
 MEMORY_STATUSES = ("kanon", "entwurf", "offen", "verworfen")
 REPEAT_OPTIONS = ("none", "daily", "weekly")
 CHAT_MODES = ("writer", "assistant")
@@ -458,8 +459,9 @@ class Database:
         return [dict(r) for r in rows]
 
     def search_memories(self, query: str, project: str = "", limit: int = 8,
-                        include_discarded: bool = True) -> list[dict]:
-        """Relevance search. Entries of the current project come first, then general ones."""
+                        include_discarded: bool = True, strict: bool = False) -> list[dict]:
+        """Relevance search. Entries of the current project come first, then general ones.
+        ``strict``: inside a project, never return story facts of other projects (no mixing up of stories)."""
         words = keywords(query)
         if not words:
             return []
@@ -486,6 +488,9 @@ class Database:
         if not include_discarded:
             results = [m for m in results if m["status"] != "verworfen"]
         current = project.strip().casefold()
+        if strict and current:
+            results = [m for m in results if m["project"].strip().casefold() == current
+                       or (not m["project"].strip() and m["category"] not in STORY_CATEGORIES)]
 
         def priority(memory: dict) -> int:
             own = memory["project"].strip().casefold()
@@ -692,7 +697,7 @@ class Database:
         return [dict(r) for r in rows]
 
     def search_chunks(self, query: str, *, doc_ids: list[int] | None = None, exclude: list[int] | None = None,
-                      project: str = "", limit: int = 6) -> list[dict]:
+                      project: str = "", limit: int = 6, strict: bool = False) -> list[dict]:
         """Finds the document passages that fit best. Each result has ``hits``: how many of the
         search words it contains."""
         words = keywords(query)
@@ -735,6 +740,8 @@ class Database:
                 chunk["score"] = -chunk["hits"]
             results.append(chunk)
         current = project.strip().casefold()
+        if strict and current:
+            results = [c for c in results if c["project"].strip().casefold() in (current, "")]
 
         def priority(chunk: dict) -> int:
             own = chunk["project"].strip().casefold()
@@ -744,6 +751,17 @@ class Database:
 
         results.sort(key=lambda c: (priority(c), -c["hits"], c["score"]))
         return results[:limit]
+
+    def suggest_project(self, text: str) -> str:
+        """If the text names characters/places of exactly one project, that project – else ""."""
+        low = text.casefold()
+        found: set[str] = set()
+        for memory in self.list_memories():
+            title = memory["title"].strip().casefold()
+            if memory["project"].strip() and memory["category"] in STORY_CATEGORIES and len(title) >= 3 \
+                    and re.search(rf"(?<!\w){re.escape(title)}(?!\w)", low):
+                found.add(memory["project"].strip())
+        return found.pop() if len(found) == 1 else ""
 
     def attach_document(self, chat_id: int, doc_id: int) -> None:
         with self._connect() as conn:

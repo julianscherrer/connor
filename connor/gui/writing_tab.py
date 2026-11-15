@@ -28,6 +28,7 @@ ACTION_TITLES = {
     "continue": "✨ Connor schreibt weiter",
     "ideas": "💡 Ideen, wie es weitergehen könnte",
     "feedback": "🔎 Ehrliches Feedback",
+    "canon": "🔍 Kanon-Check: passt alles zusammen?",
 }
 LENGTHS = [("kurz", "Kurz (1 Absatz)"), ("mittel", "Mittel (2–3 Absätze)"), ("lang", "Lang (ganze Szene)")]
 
@@ -209,11 +210,16 @@ class WritingTab(QWidget):
         self.ideas_button.clicked.connect(lambda: self.run_action("ideas"))
         self.feedback_button = QPushButton("🔎  Feedback")
         self.feedback_button.clicked.connect(lambda: self.run_action("feedback"))
+        self.canon_button = QPushButton("🔍  Kanon-Check")
+        self.canon_button.setToolTip("Prüft den Text auf Widersprüche zu den gespeicherten Fakten des Projekts\n"
+                                     "(Namen, Aussehen, Alter, Beziehungen, wer lebt oder tot ist …)")
+        self.canon_button.clicked.connect(lambda: self.run_action("canon"))
         self.stop_button = QPushButton("■  Stopp")
         self.stop_button.setObjectName("danger")
         self.stop_button.clicked.connect(self.stop)
         self.stop_button.hide()
-        for button in (self.continue_button, self.ideas_button, self.feedback_button, self.stop_button):
+        for button in (self.continue_button, self.ideas_button, self.feedback_button, self.canon_button,
+                       self.stop_button):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             actions.addWidget(button)
         main.addLayout(actions)
@@ -332,7 +338,7 @@ class WritingTab(QWidget):
 
     # ------------------------------------------------------------- Connor
     def _set_busy(self, busy: bool) -> None:
-        for button in (self.continue_button, self.ideas_button, self.feedback_button):
+        for button in (self.continue_button, self.ideas_button, self.feedback_button, self.canon_button):
             button.setEnabled(not busy)
         self.stop_button.setVisible(busy)
         for button in (self.accept_button, self.remember_button, self.retry_button):
@@ -347,22 +353,32 @@ class WritingTab(QWidget):
             return
         self.save_current()
         text = self.editor.toPlainText()
-        if action in ("ideas", "feedback") and not text.strip():
+        if action in ("ideas", "feedback", "canon") and not text.strip():
             QMessageBox.information(self, "Noch leer", "Schreib zuerst ein paar Sätze – dann kann Connor dir helfen.")
             return
-        title = self.title_edit.text().strip()
         project = self.project()
+        if action == "canon" and not project:
+            answer = QMessageBox.question(
+                self, "Kein Projekt gewählt",
+                "Ohne Projekt kennt Connor die gespeicherten Fakten zu dieser Geschichte nicht und prüft nur, ob "
+                "der Text in sich stimmig ist.\n\nTrotzdem prüfen? (Sonst oben rechts ein Projekt wählen.)")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        title = self.title_edit.text().strip()
         hint = self.hint_edit.text()
         length = self.length_box.currentData()
         max_chars = max(3000, (self.settings.context_size - 3000) * 3 - 6000)
+        limit = 40 if action == "canon" else 15
+        temperature = 0.2 if action == "canon" else None
         engine = self.engine
         query = f"{title} {project} {hint} {text[-1500:]}"
 
         def job(worker: Worker) -> Reply:
             prompt = build_writing_prompt(action=action, title=title, text=text, hint=hint, length=length,
-                                          max_chars=max_chars, context=engine.writing_context(project, query))
+                                          max_chars=max_chars,
+                                          context=engine.writing_context(project, query, limit=limit))
             return engine.generate(engine.writing_system_prompt(), prompt, on_chunk=worker.emit_chunk,
-                                   token=worker.token)
+                                   token=worker.token, temperature=temperature)
 
         worker = Worker(job)
         worker.chunk.connect(self._on_chunk)

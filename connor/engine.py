@@ -232,7 +232,7 @@ class ConnorEngine:
         room = min(library_chars, budget - used)
         if words and room > 300:
             current = project.strip().casefold()
-            for chunk in self.db.search_chunks(query, project=project, exclude=attached, limit=8):
+            for chunk in self.db.search_chunks(query, project=project, exclude=attached, limit=8, strict=True):
                 own_project = bool(current) and chunk["project"].strip().casefold() == current
                 if chunk["hits"] < (1 if own_project else min(2, len(words))) or len(chunk["content"]) > room:
                     continue
@@ -265,7 +265,7 @@ class ConnorEngine:
 
         system = self.system_prompt(mode, "tools" if tools else "plain")
         preference_ids = {m["id"] for m in self._preferences()}
-        memories = [m for m in self.db.search_memories(f"{query} {project}", project=project, limit=8,
+        memories = [m for m in self.db.search_memories(f"{query} {project}", project=project, limit=8, strict=True,
                                                        include_discarded=False) if m["id"] not in preference_ids]
         chunks = self.document_context(query, project=project, doc_ids=[d["id"] for d in self.db.chat_documents(chat_id)])
         context = build_context_block(now=datetime.now(), project=project, projects=self.db.list_projects()[:20],
@@ -426,27 +426,28 @@ class ConnorEngine:
         return current if len(current) >= 200 else previous_answer
 
     def generate(self, system: str, prompt: str, *, on_chunk: Callable[[str], None] = _ignore,
-                 token: CancelToken | None = None) -> Reply:
+                 token: CancelToken | None = None, temperature: float | None = None) -> Reply:
         """A single answer without tools (used by the writing desk)."""
         token = token or CancelToken()
         client = self.new_client()
         model = self.resolve_model(client)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
-        content, _ = self._stream(client, model, messages, None, "writer", on_chunk, token)
+        extra = {"temperature": temperature} if temperature is not None else {}
+        content, _ = self._stream(client, model, messages, None, "writer", on_chunk, token, **extra)
         return Reply(content.strip(), set(), model)
 
     def writing_system_prompt(self) -> str:
         return build_system_prompt(mode="writer", tool_mode="writing", user_name=self.settings.user_name,
                                    preferences=self._preferences(), extra=self.settings.extra_instructions)
 
-    def writing_context(self, project: str, query: str) -> str:
+    def writing_context(self, project: str, query: str, limit: int = 15) -> str:
         memories: list[dict] = []
         if project.strip():
             own = [m for m in self.db.list_memories(project=project) if m["status"] != "verworfen"]
             own.sort(key=lambda m: 0 if m["status"] == "kanon" else 1)
-            memories = own[:15]
+            memories = own[:limit]
         seen = {m["id"] for m in memories} | {m["id"] for m in self._preferences()}
-        for memory in self.db.search_memories(query, project=project, limit=6, include_discarded=False):
+        for memory in self.db.search_memories(query, project=project, limit=6, include_discarded=False, strict=True):
             if memory["id"] not in seen:
                 memories.append(memory)
                 seen.add(memory["id"])

@@ -337,3 +337,38 @@ def test_save_answer_as_word_and_export_story(window, db, fake, tmp_path):
     desk.save_current()
     target = desk.export_to(tmp_path / "Export.docx")
     assert read_document(target) == "# Der Drache\n\nErster Absatz.\n\nZweiter Absatz."
+
+
+def test_project_is_chosen_automatically(window, db, fake):
+    db.add_memory("Lira", "Elfe", "charakter", "Drachenreiter", "kanon")
+    db.add_memory("Zorg", "Roboter", "charakter", "Sternenstaub", "kanon")
+    chat = window.chat_tab
+    chat.input.setPlainText("Was würde Lira jetzt tun?")
+    chat.send()
+    assert wait_until(lambda: not chat.busy)
+    assert chat.project() == "Drachenreiter" and db.get_chat(chat.chat_id)["project"] == "Drachenreiter"
+    messages = db.get_messages(chat.chat_id)
+    assert messages[0]["role"] == "event" and "Drachenreiter" in messages[0]["content"]
+    context = fake.requests[-1]["messages"][-1]["content"]
+    assert "Lira: Elfe" in context and "Zorg" not in context
+
+
+def test_canon_check_and_backup(window, db, fake, tmp_path):
+    db.add_memory("Lira", "Elfe mit grünen Augen", "charakter", "Drachenreiter", "kanon")
+    desk = window.writing_tab
+    desk.new_story()
+    desk.project_box.setCurrentText("Drachenreiter")
+    desk.editor.setPlainText("Lira blinzelte mit ihren blauen Augen.")
+    fake.script.append({"content": "- «blauen Augen» – laut Erinnerung Lira hat sie grüne Augen."})
+    desk.run_action("canon")
+    assert wait_until(lambda: desk._active is None)
+    assert "grüne Augen" in desk.suggestion_view.toPlainText()
+    request = fake.requests[-1]
+    assert request["options"]["temperature"] == 0.2
+    assert "Elfe mit grünen Augen" in request["messages"][1]["content"]
+    assert not desk.accept_button.isVisible()
+
+    window.settings.backup_dir = str(tmp_path / "backups")
+    window.run_backup()
+    assert wait_until(lambda: not window._backing_up)
+    assert list((tmp_path / "backups").glob("connor-*.db"))

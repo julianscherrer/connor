@@ -94,7 +94,7 @@ cd connor
 ### Chat
 - **Enter** sendet, **Shift+Enter** macht eine neue Zeile. **■ Stopp** bricht eine Antwort ab.
 - **Modus** oben im Chat: **💬 Allrounder** für normale Fragen («Wie funktioniert …?», «Plan mir …», «Übersetz …») oder **✍️ Schreibpartner** für Geschichten. Neue Chats starten im zuletzt gewählten Modus.
-- Daneben wählst du ein **Projekt** (z. B. «Drachenreiter»). Connor ordnet dann neue Erinnerungen und Dateien diesem Projekt zu und holt passende Fakten hervor.
+- Daneben wählst du ein **Projekt** (z. B. «Drachenreiter»). Jedes Projekt ist eine eigene Welt: Connor nutzt dann nur dessen Figuren, Orte und Dateien – Geschichten vermischen sich nicht. Erwähnst du in einem Chat ohne Projekt eine bekannte Figur, wählt Connor das passende Projekt selbst und sagt es dir.
 - Die Knöpfe über dem Eingabefeld geben dir einen Startsatz vor – je nach Modus andere.
 - Rechtsklick auf einen Chat links: umbenennen, als Markdown exportieren, löschen.
 
@@ -122,6 +122,7 @@ Links deine Geschichten, rechts der Editor (speichert automatisch). Unten:
 - **✨ Weiterschreiben** – Connor schreibt im gleichen Stil weiter (Länge wählbar). Mit **✓ Übernehmen** landet der Text in deiner Geschichte – *Ctrl+Z* macht's rückgängig.
 - **💡 Ideen** – mehrere Richtungen, wie es weitergehen könnte. **🧠 Als Idee merken** speichert sie im Gedächtnis.
 - **🔎 Feedback** – ehrliche Rückmeldung zu Tempo, Figuren, Dialogen und Logik.
+- **🔍 Kanon-Check** – prüft deinen Text auf Widersprüche zu den gespeicherten Fakten des Projekts (Namen, Augenfarbe, Alter, wer lebt oder tot ist …) und schlägt Korrekturen vor.
 - Im Feld «Wunsch an Connor» kannst du die Richtung vorgeben, z. B. *mehr Spannung* oder *Dialog zwischen Lira und Tom*.
 - **🎤 Diktieren** schreibt deinen gesprochenen Text an die Cursor-Position.
 - **Datei reinziehen:** eine Word- oder Markdown-Datei kannst du **als Geschichte öffnen** (z. B. dein Manuskript) oder **als Wissen speichern** (z. B. Weltenbau-Notizen). Connor nutzt das Wissen deines Projekts beim Weiterschreiben automatisch.
@@ -158,7 +159,8 @@ Beim ersten Diktieren lädt Connor das Sprachmodell herunter (Standard «Small»
 
 - **Update:** Doppelklick auf `update.bat` – beendet ein laufendes Connor (auch im Tray), holt die neuste Version von GitHub und installiert neue Pakete. Danach Connor mit `start.bat` neu starten. Deine Daten bleiben unverändert und werden automatisch übernommen.
   *(Ohne `update.bat`: `git pull` und dann `start.bat` – Connor ersetzt eine noch laufende alte Version automatisch.)*
-- **Backup:** Den Ordner `data/` kopieren. Zum Wiederherstellen zurückkopieren.
+- **Backup:** Connor sichert jeden Tag automatisch alles in `data\backups` (die letzten 14 Tage). In den Einstellungen kannst du einen anderen Ordner wählen – am besten einen USB-Stick oder OneDrive – und mit «Jetzt sichern» sofort sichern.
+- **Backup wiederherstellen:** Connor beenden (Tray → Beenden), die gewünschte Datei `connor-JJJJ-MM-TT.db` aus dem Backup-Ordner nach `data\connor.db` kopieren (alte Datei ersetzen), Connor starten.
 - **Auf einen anderen PC umziehen:** Connor dort installieren und den `data/`-Ordner hineinkopieren.
 
 ---

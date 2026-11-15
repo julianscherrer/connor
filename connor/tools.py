@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Callable
 
 from . import files, websearch
-from .database import MEMORY_CATEGORIES, MEMORY_STATUSES, Database, str_to_dt
+from .database import MEMORY_CATEGORIES, MEMORY_STATUSES, STORY_CATEGORIES, Database, str_to_dt
 from .prompts import format_chunk, format_memory
 from .settings import Settings
 from .timeparse import extract_when, format_dt
@@ -185,11 +185,15 @@ class ToolExecutor:
         project = _text(a.get("project")) or ("" if category == "vorliebe" else self.project)
         memory_id, created = self.db.save_memory(title, content, category=category, project=project, status=status)
         self.changed.add("memory")
-        return f"OK: {'Neu gespeichert' if created else 'Ergänzt'} als Erinnerung #{memory_id} «{title}»."
+        note = ""
+        if not project and category in STORY_CATEGORIES:
+            note = (" Hinweis: Es ist kein Projekt gewählt, darum gilt der Eintrag für alle Geschichten. "
+                    "Sag dem User, er soll oben ein Projekt wählen, damit sich Geschichten nicht vermischen.")
+        return f"OK: {'Neu gespeichert' if created else 'Ergänzt'} als Erinnerung #{memory_id} «{title}».{note}"
 
     def _tool_search_memory(self, a: dict) -> str:
         query = _text(a.get("query"))
-        results = self.db.search_memories(query, project=self.project, limit=8)
+        results = self.db.search_memories(query, project=self.project, limit=8, strict=True)
         if not results:
             return f"Nichts gefunden zu «{query}»."
         return "Gefunden:\n" + "\n".join(format_memory(m) for m in results)
@@ -229,7 +233,7 @@ class ToolExecutor:
 
     def _tool_search_documents(self, a: dict) -> str:
         query = _text(a.get("query"))
-        chunks = self.db.search_chunks(query, project=self.project, limit=5)
+        chunks = self.db.search_chunks(query, project=self.project, limit=5, strict=True)
         if not chunks:
             if not self.db.list_documents():
                 return "Der User hat noch keine Dateien zu Connor hinzugefügt."

@@ -614,9 +614,22 @@ class ChatTab(QWidget):
         self._ask(text, force_web=self.web_button.isChecked() and self.settings.web_enabled)
 
     def _ask(self, text: str, *, force_web: bool = False, web_query: str | None = None) -> None:
+        note = ""
+        if not self.project():
+            suggestion = self.db.suggest_project(text)
+            if suggestion:
+                self.project_box.setCurrentText(suggestion)
+                note = (f"📚 Projekt «{suggestion}» gewählt, weil du von dessen Figuren oder Orten sprichst – "
+                        "so vermischt Connor keine Geschichten. Ändern kannst du es oben rechts.")
         chat_id = self._ensure_chat(text)
+        if note:
+            self._project_changed()
+            self.db.add_message(chat_id, "event", note)
         self.db.add_message(chat_id, "user", text)
+        had_welcome = self.view.has_welcome()
         self.open_chat_view_if_needed(chat_id)
+        if note and not had_welcome:
+            self.view.add_event(note)
         self.view.add_message("user", text, now_stamp())
         self.view.scroll_to_bottom()
         self.refresh_attachments()

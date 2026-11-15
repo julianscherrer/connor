@@ -34,6 +34,9 @@ class Settings:
     voice_device: str = "auto"  # auto | cpu | cuda
     voice_autosend: bool = False
     files_dir: str = ""  # empty = Dokumente\Connor
+    backup_enabled: bool = True
+    backup_dir: str = ""  # empty = data\backups
+    backup_keep: int = 14
     minimize_to_tray: bool = True
     tray_hint_shown: bool = False
     window_geometry: str = ""

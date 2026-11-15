@@ -4,13 +4,14 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
-                               QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
+                               QMessageBox, QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, system
+from .. import APP_NAME, backup, system
 from ..database import Database, str_to_dt
 from ..engine import ConnorEngine
 from ..llm import OLLAMA_DOWNLOAD, RECOMMENDED_MODEL, OllamaClient, OllamaError
@@ -125,6 +126,13 @@ class MainWindow(QMainWindow):
         self.recheck_timer.setSingleShot(True)
         self.recheck_timer.timeout.connect(lambda: self.check_ollama(try_start=False))
         QTimer.singleShot(200, lambda: self.check_ollama(try_start=True))
+
+        self._backing_up = False
+        self.backup_timer = QTimer(self)
+        self.backup_timer.setInterval(60 * 60 * 1000)
+        self.backup_timer.timeout.connect(self.run_backup)
+        self.backup_timer.start()
+        QTimer.singleShot(30_000, self.run_backup)
 
         if settings.window_geometry:
             self.restoreGeometry(QByteArray.fromBase64(settings.window_geometry.encode("ascii")))
@@ -362,7 +370,7 @@ class MainWindow(QMainWindow):
             self.check_ollama()
 
     def open_settings(self) -> None:
-        dialog = SettingsDialog(self.settings, self)
+        dialog = SettingsDialog(self.settings, self, backup_now=lambda: self.run_backup(force=True))
         if dialog.exec():
             dialog.apply()
             self.settings.save()
@@ -374,6 +382,42 @@ class MainWindow(QMainWindow):
                 self.chat_tab.new_chat()
 
     # ---------------------------------------------------------- reminders
+    def run_backup(self, force: bool = False) -> None:
+        """Once a day (or right now with ``force``) a copy of all data, in the background."""
+        if self._backing_up or not (self.settings.backup_enabled or force):
+            return
+        try:
+            folder = backup.backup_folder(self.settings.backup_dir)
+        except OSError as exc:
+            log.warning("Backup-Ordner nicht erreichbar: %s", exc)
+            return
+        if not force and not backup.backup_due(folder):
+            return
+        self._backing_up = True
+        source, keep = Path(self.db.path), self.settings.backup_keep
+
+        def job(_worker: Worker):
+            return backup.make_backup(folder, source=source, keep=keep)
+
+        def finished(worker: Worker, path) -> None:
+            self._workers.discard(worker)
+            self._backing_up = False
+            if force and path:
+                QMessageBox.information(self, "Backup", f"Gesichert:\n{path}")
+
+        def failed(worker: Worker, message: str) -> None:
+            self._workers.discard(worker)
+            self._backing_up = False
+            log.warning("Backup fehlgeschlagen: %s", message)
+            if force:
+                QMessageBox.warning(self, "Backup", f"Das Backup hat nicht geklappt:\n{message}")
+
+        worker = Worker(job)
+        worker.finished.connect(finished)
+        worker.failed.connect(failed)
+        self._workers.add(worker)
+        worker.start()
+
     def check_reminders(self) -> None:
         now = datetime.now()
         try:
